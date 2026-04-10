@@ -1,0 +1,8 @@
+mode = "ablation"
+extends = "base.toml"
+
+[input]
+benchmark_source = "data/benchmarks"
+
+[ablation]
+vary = "symbolic_feedback"

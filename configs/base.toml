@@ -1,0 +1,39 @@
+[runtime]
+max_iterations = 6
+token_budget = 200000
+solver_timeout_seconds = 30
+retrieval_top_k = 8
+
+[paths]
+artifact_root = "artifacts/runs"
+logs_root = "artifacts/logs"
+workspace_root = "artifacts/workspaces"
+cache_root = "artifacts/cache"
+
+[cache]
+retrieval_embeddings = "artifacts/cache/<run_id>/retrieval_embeddings"
+retrieved_context = "artifacts/cache/<run_id>/retrieved_context"
+solver_outputs = "artifacts/cache/<run_id>/solver_outputs"
+prompt_outputs = "artifacts/cache/<run_id>/prompt_outputs"
+
+[logging]
+run_log = "artifacts/logs/<run_id>/run.log"
+error_log = "artifacts/logs/<run_id>/error.log"
+solver_log = "artifacts/runs/<run_id>/tasks/<task_id>/logs/solver/solver.log"
+patch_log = "artifacts/runs/<run_id>/tasks/<task_id>/logs/patches/patch.log"
+
+[versions]
+python = ">=3.9, <3.12"
+prompt = "v0"
+schema = "0.1.0"
+dependency_manifest = "pyproject.toml"
+dependency_lockfile = "poetry.lock"
+
+[pipeline]
+stages = [
+  "retrieval",
+  "patch_generation",
+  "slicing",
+  "symbolic_reasoning",
+  "evaluation",
+]
