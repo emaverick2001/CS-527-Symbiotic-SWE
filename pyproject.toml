@@ -19,7 +19,7 @@ symbiotic-swe-ablation = "symbiotic_swe.cli:main_ablation"
 python = ">=3.9, <3.12"
 mypy = "^1.8.0"
 beartype = "^0.17.1"
-pydantic = "^2.8.2"
+pydantic = "^2.12.5"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.6.0"
