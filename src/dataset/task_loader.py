@@ -1,38 +1,6 @@
 from __future__ import annotations
 
-"""
-Task loading, normalization, scoring, and subset selection for benchmark rows.
-
-This module is responsible for turning raw SWE-bench-style JSONL rows into a
-normalized internal task representation, scoring tasks for logic-heavy
-characteristics, and selecting subsets for smoke/dev/final evaluation runs.
-
-Main flow:
-1. Load raw rows from a JSONL file.
-2. Normalize dataset-specific field names into a common shape.
-3. Validate required fields and collect row-level errors.
-4. Score tasks using patch/text heuristics.
-5. Select balanced subsets for smoke, dev, and final evaluation.
-
-Typical usage:
-    loader = TaskLoader(TaskLoaderConfig())
-    tasks, errors = loader.load_raw_tasks(Path("data/benchmarks/.../test.jsonl"))
-    candidates = loader.score_tasks(tasks)
-    smoke, dev, final_eval, skipped = loader.select_subsets(candidates)
-
-Key outputs:
-- `TaskObject`: normalized benchmark task record
-- `RawTaskError`: validation or parsing failure for a row
-- `CandidateTask`: scored task with selection metadata
-
-CLI Usage:
-    poetry run python -m src.dataset.task_loader \\
-        --input-jsonl data/benchmarks/swe_bench/verified/jsonl/test.jsonl \\
-        --output-dir data/benchmarks/swe_bench/verified/filtered \\
-        --smoke-count 5 \\
-        --core-count 40 \\
-        --repo-filter-mode preferred
-"""
+"""Load raw SWE-bench Verified tasks, rank logic-heavy candidates, and export raw subsets."""
 
 import argparse
 import ast
@@ -42,11 +10,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
 if __package__ in {None, ''}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from src.contracts import TaskContract
 
 PREFERRED_REPOS = (
     'sympy/sympy',
@@ -57,7 +22,6 @@ PREFERRED_REPOS = (
 )
 
 REPO_FILTER_MODES = ('preferred', 'strict', 'none')
-SUPPORTED_DATASET_SOURCES = ('swe_bench_verified', 'synthetic_humaneval_bugfix')
 
 LOGIC_PATCH_PATTERNS = {
     'branching': [r'^[+-]\s*if\b', r'^[+-]\s*elif\b', r'^[+-]\s*else\b'],
@@ -126,6 +90,8 @@ REQUIRED_RAW_FIELDS = (
     'base_commit',
     'problem_statement',
     'FAIL_TO_PASS',
+    'PASS_TO_PASS',
+    'test_patch',
 )
 
 
@@ -171,35 +137,16 @@ class CandidateTask:
 
 
 @dataclass(frozen=True)
-class NormalizedArtifactPaths:
-    candidate_path: Path
-    normalized_path: Path
-    raw_fields_path: Path
-    malformed_path: Path | None = None
-
-
-@dataclass(frozen=True)
 class TaskLoaderConfig:
     dataset_name: str = 'SWE-bench Verified'
     split: str = 'test'
-    dataset_source: str | None = None
     preferred_repos: tuple[str, ...] = PREFERRED_REPOS
     repo_filter_mode: str = 'preferred'
     smoke_count: int = 5
-    dev_count: int = 10
-    final_eval_count: int = 40
+    core_count: int = 40
     max_changed_lines: int = 30
     max_changed_files: int = 3
     min_logic_score: int = 6
-
-
-def infer_dataset_source(dataset_name: str) -> str:
-    normalized = dataset_name.strip().lower().replace('-', '_').replace(' ', '_')
-    if 'swe' in normalized and 'bench' in normalized:
-        return 'swe_bench_verified'
-    if 'humaneval' in normalized:
-        return 'synthetic_humaneval_bugfix'
-    return normalized
 
 
 def parse_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -238,60 +185,6 @@ def normalize_trace(raw_value: Any) -> tuple[str, ...]:
     if isinstance(raw_value, str) and raw_value.strip():
         return (raw_value,)
     return ()
-
-
-def _first_present(row: dict[str, Any], *keys: str) -> Any:
-    for key in keys:
-        if key in row and row[key] not in (None, ''):
-            return row[key]
-    return None
-
-
-def normalize_benchmark_row(
-    row: dict[str, Any],
-    dataset_source: str,
-) -> dict[str, Any]:
-    if dataset_source == 'swe_bench_verified':
-        return dict(row)
-
-    if dataset_source == 'synthetic_humaneval_bugfix':
-        normalized = dict(row)
-        normalized.setdefault(
-            'instance_id',
-            _first_present(row, 'instance_id', 'task_id', 'problem_id'),
-        )
-        normalized.setdefault('repo', _first_present(row, 'repo', 'repo_identifier'))
-        normalized.setdefault(
-            'base_commit',
-            _first_present(row, 'base_commit', 'repo_commit', 'commit'),
-        )
-        normalized.setdefault(
-            'problem_statement',
-            _first_present(row, 'problem_statement', 'bug_report', 'prompt'),
-        )
-        normalized.setdefault(
-            'FAIL_TO_PASS',
-            _first_present(row, 'FAIL_TO_PASS', 'failing_tests'),
-        )
-        normalized.setdefault(
-            'PASS_TO_PASS',
-            _first_present(row, 'PASS_TO_PASS', 'passing_tests'),
-        )
-        normalized.setdefault('patch', _first_present(row, 'patch', 'gold_patch'))
-        normalized.setdefault('test_patch', _first_present(row, 'test_patch'))
-        normalized.setdefault('hints_text', _first_present(row, 'hints_text', 'hints'))
-        normalized.setdefault('difficulty', _first_present(row, 'difficulty'))
-        normalized.setdefault(
-            'constraint_spec',
-            _first_present(row, 'constraint_spec', 'oracle', 'logical_constraints'),
-        )
-        normalized.setdefault(
-            'execution_trace',
-            _first_present(row, 'execution_trace', 'trace'),
-        )
-        return normalized
-
-    raise ValueError(f'Unsupported dataset_source: {dataset_source}')
 
 
 def missing_required_fields(row: dict[str, Any]) -> tuple[str, ...]:
@@ -576,12 +469,9 @@ def sort_candidates(candidates: list[CandidateTask]) -> list[CandidateTask]:
 def build_task_subsets(
     candidates: list[CandidateTask],
     smoke_count: int = 5,
-    dev_count: int = 10,
-    final_eval_count: int = 40,
+    core_count: int = 40,
     preferred_repos: tuple[str, ...] = PREFERRED_REPOS,
-) -> tuple[
-    list[CandidateTask], list[CandidateTask], list[CandidateTask], list[CandidateTask]
-]:
+) -> tuple[list[CandidateTask], list[CandidateTask], list[CandidateTask]]:
     usable = sort_candidates(
         [candidate for candidate in candidates if not candidate.exclusion_reasons]
     )
@@ -595,25 +485,13 @@ def build_task_subsets(
     smoke_tasks = balanced_take(smoke_candidates, smoke_count, preferred_repos)
     used_ids = {candidate.raw.instance_id for candidate in smoke_tasks}
 
-    remaining_logic = [
+    remaining_core = [
         candidate
         for candidate in usable
         if candidate.logic_heavy and candidate.raw.instance_id not in used_ids
     ]
-    dev_tasks = balanced_take(remaining_logic, dev_count, preferred_repos)
-    used_ids.update(candidate.raw.instance_id for candidate in dev_tasks)
-
-    remaining_for_final = [
-        candidate
-        for candidate in usable
-        if candidate.logic_heavy and candidate.raw.instance_id not in used_ids
-    ]
-    final_eval_tasks = balanced_take(
-        remaining_for_final,
-        final_eval_count,
-        preferred_repos,
-    )
-    return smoke_tasks, dev_tasks, final_eval_tasks, skipped
+    core_tasks = balanced_take(remaining_core, core_count, preferred_repos)
+    return smoke_tasks, core_tasks, skipped
 
 
 def raw_subset_rows(candidates: list[CandidateTask]) -> list[dict[str, Any]]:
@@ -632,11 +510,7 @@ class TaskLoader:
 
     def __init__(self, config: TaskLoaderConfig | None = None) -> None:
         self.config = config or TaskLoaderConfig()
-        self.dataset_source = self.config.dataset_source or infer_dataset_source(
-            self.config.dataset_name
-        )
-        if self.dataset_source not in SUPPORTED_DATASET_SOURCES:
-            raise ValueError(f'Unsupported dataset_source: {self.dataset_source}')
+        self.dataset_source = 'swe_bench_verified'
 
     def validate_row(
         self,
@@ -644,8 +518,7 @@ class TaskLoader:
         row_number: int,
         input_path: Path,
     ) -> tuple[TaskObject | None, RawTaskError | None]:
-        normalized_row = normalize_benchmark_row(row, self.dataset_source)
-        missing_fields = missing_required_fields(normalized_row)
+        missing_fields = missing_required_fields(row)
         if missing_fields:
             return None, RawTaskError(
                 source_path=str(input_path),
@@ -660,31 +533,24 @@ class TaskLoader:
                 dataset_source=self.dataset_source,
                 split=self.config.split,
                 source_path=str(input_path),
-                instance_id=str(normalized_row['instance_id']),
-                repo=str(normalized_row['repo']),
-                base_commit=str(normalized_row['base_commit']),
-                problem_statement=str(normalized_row['problem_statement']),
-                failing_tests=tuple(
-                    parse_test_list(normalized_row.get('FAIL_TO_PASS'))
-                ),
-                passing_tests=tuple(
-                    parse_test_list(normalized_row.get('PASS_TO_PASS'))
-                ),
-                patch=str(normalized_row['patch'])
-                if normalized_row.get('patch')
+                instance_id=str(row['instance_id']),
+                repo=str(row['repo']),
+                base_commit=str(row['base_commit']),
+                problem_statement=str(row['problem_statement']),
+                failing_tests=tuple(parse_test_list(row.get('FAIL_TO_PASS'))),
+                passing_tests=tuple(parse_test_list(row.get('PASS_TO_PASS'))),
+                patch=str(row['patch'])
+                if row.get('patch')
                 else None,
-                test_patch=str(normalized_row['test_patch'])
-                if normalized_row.get('test_patch')
+                test_patch=str(row['test_patch'])
+                if row.get('test_patch')
                 else None,
-                hints_text=str(normalized_row.get('hints_text') or ''),
-                difficulty=str(normalized_row.get('difficulty'))
-                if normalized_row.get('difficulty')
+                hints_text=str(row.get('hints_text') or ''),
+                difficulty=str(row.get('difficulty'))
+                if row.get('difficulty')
                 else None,
-                execution_trace=normalize_trace(
-                    normalized_row.get('execution_trace') or normalized_row.get('trace')
-                ),
-                constraint_spec=normalized_row.get('constraint_spec')
-                or normalized_row.get('oracle'),
+                execution_trace=normalize_trace(row.get('execution_trace') or row.get('trace')),
+                constraint_spec=row.get('constraint_spec') or row.get('oracle'),
                 raw_fields=row,
             ),
             None,
@@ -721,51 +587,14 @@ class TaskLoader:
     def score_tasks(self, tasks: list[TaskObject]) -> list[CandidateTask]:
         return [self.score_task(task) for task in tasks]
 
-    def normalize_task(self, candidate: CandidateTask, subset: str) -> TaskContract:
-        return TaskNormalizer().normalize_task(candidate, subset)
-
-    def write_normalized_artifacts(
-        self,
-        task: TaskContract,
-        candidate: CandidateTask,
-        output_dir: Path,
-        malformed_rows: list[RawTaskError] | None = None,
-    ) -> NormalizedArtifactPaths:
-        return TaskNormalizer().write_normalized_artifacts(
-            task=task,
-            candidate=candidate,
-            output_dir=output_dir,
-            malformed_rows=malformed_rows,
-        )
-
-    def write_normalized_preview(
-        self,
-        task: TaskContract,
-        candidate: CandidateTask,
-        malformed_rows: list[RawTaskError],
-        output_dir: Path,
-    ) -> tuple[Path, Path, Path]:
-        return TaskNormalizer().write_normalized_preview(
-            task=task,
-            candidate=candidate,
-            malformed_rows=malformed_rows,
-            output_dir=output_dir,
-        )
-
     def select_subsets(
         self,
         candidates: list[CandidateTask],
-    ) -> tuple[
-        list[CandidateTask],
-        list[CandidateTask],
-        list[CandidateTask],
-        list[CandidateTask],
-    ]:
+    ) -> tuple[list[CandidateTask], list[CandidateTask], list[CandidateTask]]:
         return build_task_subsets(
             candidates,
             smoke_count=self.config.smoke_count,
-            dev_count=self.config.dev_count,
-            final_eval_count=self.config.final_eval_count,
+            core_count=self.config.core_count,
             preferred_repos=self.config.preferred_repos,
         )
 
@@ -852,9 +681,7 @@ def export_ranked_raw_subsets(
 ) -> tuple[Path, Path, int, int, int, int]:
     raw_tasks, malformed_rows = loader.load_raw_tasks(input_path)
     candidates = loader.score_tasks(raw_tasks)
-    smoke_candidates, _dev_candidates, core_candidates, skipped = loader.select_subsets(
-        candidates
-    )
+    smoke_candidates, core_candidates, _skipped = loader.select_subsets(candidates)
 
     core_path = output_dir / 'core_tasks.jsonl'
     smoke_path = output_dir / 'smoke_tasks.jsonl'
@@ -888,8 +715,7 @@ def main(argv: list[str] | None = None) -> int:
         TaskLoaderConfig(
             repo_filter_mode=args.repo_filter_mode,
             smoke_count=args.smoke_count,
-            final_eval_count=args.core_count,
-            dev_count=0,
+            core_count=args.core_count,
             max_changed_lines=args.max_changed_lines,
             max_changed_files=args.max_changed_files,
             min_logic_score=args.min_logic_score,

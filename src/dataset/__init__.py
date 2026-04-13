@@ -1,68 +1,25 @@
-"""Dataset preparation and task-loading placeholders for the pipeline scaffold."""
+"""Minimal dataset package exports for the current iterative pipeline."""
 
-from src.dataset.dataset_writer import prepared_split_payload, write_prepared_tasks
-from src.dataset.preparation import (
-    DatasetPreparationResult,
-    default_processed_output_dir,
-    default_repo_source_root,
-    default_swe_bench_input_path,
-    load_raw_swe_bench_tasks,
-    normalize_task,
-    prepare_swe_bench_tasks,
-    score_task_definition,
-)
-from src.dataset.repo_indexer import (
-    MaterializationResult,
-    PatchApplyResult,
-    PreparedTaskArtifact,
-    RepositoryIndexer,
-    RepositoryIndexerConfig,
-    RepositoryIndexResult,
-    apply_patch_to_repository,
-    build_repository_index,
-    materialize_repository_snapshot,
-    persist_validation_signals,
-    resolve_repository_source,
-)
-from src.dataset.task_loader import (
-    PREFERRED_REPOS,
-    REPO_FILTER_MODES,
-    CandidateTask,
-    RawTaskDefinition,
-    RawTaskError,
-    TaskLoader,
-    TaskLoaderConfig,
-    TaskObject,
-)
+from importlib import import_module
+from typing import Any
 
 __all__ = [
     'CandidateTask',
-    'DatasetPreparationResult',
     'PREFERRED_REPOS',
     'REPO_FILTER_MODES',
-    'RawTaskDefinition',
     'RawTaskError',
     'TaskLoader',
     'TaskLoaderConfig',
     'TaskObject',
-    'default_processed_output_dir',
-    'default_repo_source_root',
-    'default_swe_bench_input_path',
-    'load_raw_swe_bench_tasks',
-    'prepared_split_payload',
-    'MaterializationResult',
-    'PatchApplyResult',
-    'PreparedTaskArtifact',
-    'RepositoryIndexer',
-    'RepositoryIndexerConfig',
-    'RepositoryIndexResult',
-    'apply_patch_to_repository',
-    'build_repository_index',
-    'materialize_repository_snapshot',
-    'normalize_task',
-    'prepare_swe_bench_tasks',
-    'persist_validation_signals',
-    'resolve_repository_source',
-    'score_task_definition',
-    'write_prepared_tasks',
+    'export_ranked_raw_subsets',
+    'raw_subset_rows',
+    'score_candidate',
+    'write_raw_jsonl',
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name in __all__:
+        module = import_module('src.dataset.task_loader')
+        return getattr(module, name)
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
