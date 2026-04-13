@@ -1,5 +1,0 @@
-mode = "task"
-extends = "base.toml"
-
-[input]
-task_source = "data/tasks"

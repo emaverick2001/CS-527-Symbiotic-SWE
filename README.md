@@ -4,10 +4,20 @@
 
 ## Overview
 
-This repository is the implementation scaffold for a neuro-symbolic software repair system. The pipeline is organized around six stages:
+This repository is the implementation scaffold for a neuro-symbolic software repair system. The pipeline is organized around the proposal’s core flow:
+
+- dataset preparation
+- context selection
+- patch generation
+- slicing
+- symbolic reasoning
+- feedback transformation
+- evaluation
+
+The execution controller still runs the current scaffold through these concrete run stages:
 
 - pipeline orchestration
-- retrieval
+- retrieval/context selection
 - patch generation
 - slicing
 - symbolic reasoning
@@ -61,6 +71,9 @@ docker run --rm -it symbiotic-swe
 # Single-task execution
 poetry run symbiotic-swe-task --task-id demo-task --max-iterations 2
 
+# Smoke execution
+poetry run symbiotic-swe-smoke
+
 # Benchmark execution
 poetry run symbiotic-swe-benchmark --task-id task-001 --task-id task-002
 
@@ -111,28 +124,42 @@ If you only want one split, pass `--split test` or another split name.
 
 ## Repository Structure
 
-- `src/symbiotic_swe/orchestration/`
-  - CLI-facing orchestration and run scaffolding
-- `src/symbiotic_swe/retrieval/`
-  - retrieval stage placeholder
-- `src/symbiotic_swe/patch_generation/`
+- `src/pipeline/`
+  - shared pipeline controller entrypoint
+- `src/dataset/`
+  - task loading and preprocessing placeholders
+- `src/context_selection/`
+  - logic-focused context selection placeholders
+- `src/patch_generation/`
   - patch generation stage placeholder
-- `src/symbiotic_swe/slicing/`
+- `src/slicing/`
   - slicing stage placeholder
-- `src/symbiotic_swe/symbolic_reasoning/`
-  - solver-facing reasoning stage placeholder
-- `src/symbiotic_swe/evaluation/`
+- `src/symbolic/`
+  - symbolic reasoning package aligned to the proposal naming
+- `src/feedback/`
+  - counterexample-to-critique placeholder contracts
+- `src/evaluation/`
   - evaluation stage placeholder
+- `src/orchestration/`
+  - run/workspace scaffolding used by the controller
 - `configs/`
-  - base, task, benchmark, and ablation configs
+  - default, task, smoke, benchmark, and ablation configs
 - `data/tasks/`
   - single-task inputs
+- `data/raw/`
+  - raw imported datasets or repo snapshots
+- `data/processed/`
+  - normalized task manifests and derived inputs
 - `data/benchmarks/`
   - benchmark manifests
 - `artifacts/runs/`
   - persistent run artifacts
 - `artifacts/logs/`
   - run-level logs
+- `artifacts/patches/`
+  - exported patch bundles and summaries
+- `artifacts/solver_outputs/`
+  - exported solver outputs outside per-run folders when needed
 - `artifacts/cache/`
   - reusable caches
 - `artifacts/workspaces/`
@@ -174,12 +201,32 @@ Run-level caches live at:
 artifacts/cache/<run_id>/
 ```
 
+Task-level observability logs live at:
+
+```text
+artifacts/runs/<run_id>/tasks/<task_id>/logs/
+```
+
+This includes:
+
+- `task.log`
+- `solver/solver.log`
+- `patches/patch.log`
+- `errors/errors.log`
+- `failures/patch_apply_failure.jsonl`
+- `failures/ast_parse_failure.jsonl`
+- `failures/solver_timeout.jsonl`
+- `failures/unsupported_symbolic_construct.jsonl`
+
 The cache tree is split into:
 
+- `parsed_repo_indexes/`
 - `retrieval_embeddings/`
 - `retrieved_context/`
 - `solver_outputs/`
 - `prompt_outputs/`
+
+Cache invalidation rules are documented in [docs/CACHING.md](/Users/maver/Desktop/Coding%20Projects/AI/CS-527-Symbiotic-SWE/docs/CACHING.md) and encoded in the `[cache_policy]` section of the default config.
 
 ## Version Tracking
 

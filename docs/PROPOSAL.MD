@@ -1024,105 +1024,6 @@ Valid(P') ⇔
 
 ---
 
-#### **System Components**
-
-- Define:
-  - components
-  - dataflow
-  - interactions
-
----
-
-##### **1. Context Retrieval Module**
-
-- **Role:**
-  - identify relevant code regions for patch generation
-- **Input → Output:**
-  - (repo, bug_report) → retrieved_context (code chunks)
-- **Interaction:**
-  - feeds into LLM prompt construction
-
-##### **2. Neural Patch Generator**
-
-- **Role:**
-  - propose candidate fixes using LLM
-- **Input → Output:**
-  - (prompt) → patch (diff)
-- **Interaction:**
-  - receives critique from feedback module
-  - outputs patch for analysis
-
-##### **3. Impact Slicing Module**
-
-- **Role:**
-  - reduce program to relevant subset
-- **Input → Output:**
-  - (patch, AST) → program_slice
-- **Interaction:**
-  - feeds into constraint extraction
-- **Why important:**
-  - reduces solver complexity
-
-##### **4. Constraint Extraction Module**
-
-- **Role:**
-  - translate program behavior into logical constraints
-- **Input → Output:**
-  - (program_slice) → symbolic_constraints
-- **Includes:**
-  - preconditions
-  - postconditions
-  - invariants
-- **Interaction:**
-  - feeds into symbolic execution
-
-##### **5. Symbolic Execution Engine**
-
-- **Role:**
-  - explore input space and validate constraints
-- **Input → Output:**
-  - (symbolic_constraints) → solver_result
-- **Outputs:**
-  - SAT → counterexample exists
-  - UNSAT → patch is logically valid
-- **Interaction:**
-  - feeds into feedback module
-
-##### **6. Counterexample Generator**
-
-- **Role:**
-  - extract concrete failing input from solver
-- **Input → Output:**
-  - (solver_result) → counterexample
-
-##### **7. Feedback Transformation Module**
-
-- **Role:**
-  - convert symbolic failure into LLM-understandable critique
-- **Input → Output:**
-  - (counterexample, constraints) → critique
-- **Example:**
-  - "Your patch fails when lst is empty due to division by zero"
-
-##### **8. Iteration Controller (CEGF Loop)**
-
-- **Role:**
-  - manage iterative refinement process
-- **Input → Output:**
-  - (patch, critique) → refined_patch
-- **Responsibilities:**
-  - track iteration count
-  - enforce termination conditions
-
-##### **9. Execution Validator (Optional but Important)**
-
-- **Role:**
-  - run tests to confirm behavioral correctness
-- **Input → Output:**
-  (patch) → test_results
-- **Interaction:**
-  - complements symbolic verification
-
 #### **High-Level Pipeline**
 
 - Describe the system as a sequence of stages:
@@ -1134,11 +1035,11 @@ Valid(P') ⇔
 
 ---
 
-1. Define Code Metadata + Repo Structure
+1. Setup
    - fill out the readme
    - setup repo + project folders
    - download dependencies
-2. **Input Processing**
+2. **Data Processing**
    - ingest bug report, repository, failing tests
 3. **Context Retrieval**
    - select relevant code regions
@@ -1159,43 +1060,9 @@ Valid(P') ⇔
 11. **Termination**
     - stop when no counterexamples OR iteration limit reached
 
-### **Execution Details (HOW it works)**
+#### **Data Lifecycle**
 
-- Provide a **step-by-step breakdown**
-- **Output of this section should be:**
-  - A **fully specified execution process**
-
----
-
-- **Solver Integration:**
-  - We use a custom Python harness around [[CrossHair]] and [[Z3]] to convert selected Python functions, their [[PEP 484]] type hints, assertions, and inferred contracts into symbolic constraints. This makes the solver usable as a callable tool inside the debugging loop instead of as a separate offline analysis step. This matches your project goal of adding a symbolic validation step to the agent’s inner loop.
-- **Prompt Engineering:**
-  - We use a **Verification-as-Prompt** strategy, where solver output is treated as a high-fidelity tool observation rather than raw logs. Counterexamples are normalized into short, structured critiques that explain the failing input, violated condition, and affected function before being reintroduced into the next repair prompt.
-- **Dataset Note:**
-  - Replace SWE-bench with a less contaminated benchmark or a filtered subset for final evaluation. Keep the pipeline dataset-agnostic so the implementation can swap benchmark loaders without changing downstream stages.
-- **Core Pipeline Contract:**
-  - Each iteration should transform:
-    - `task instance -> retrieved repo context -> candidate patch -> impacted program slice -> symbolic constraints -> solver result -> counterexample critique -> refined patch`
-- **State Contract:**
-  - Keep one canonical runtime object for the whole loop, for example:
-  ```python
-  state = {
-      "task": {},
-      "repo": {},
-      "context": [],
-      "prompt": "",
-      "patch": None,
-      "slice": None,
-      "constraints": None,
-      "solver_result": None,
-      "counterexample": None,
-      "critique": None,
-      "history": [],
-      "metrics": {},
-  }
-  ```
-
-#### **Dataflow Example**
+##### **Dataflow Example**
 
 - Bug: division by zero when list is empty
 - Repo contains:
@@ -1208,1664 +1075,633 @@ def sum_list(lst):
 - **Bug report:** `"Function fails when list is empty"`
 - **Expected behavior:** return `0` when `lst == []`
 
-#### **End-to-end dataflow for this example**
+##### **End-to-end dataflow w/ manipulations**
 
-1. Load task and repo snapshot
-2. Retrieve `sum_list`
-3. Ask LLM for patch
-4. Apply patch and locate affected function
-5. Translate function behavior into symbolic constraints
-6. Ask solver for violating input
-7. If violating input exists, convert it into critique
-8. Re-prompt LLM with critique
-9. Repeat until solver finds no violating input or budget is exhausted
+1. Load task
+   - The system first loads a structured repair task containing:
+     - repository snapshot
+     - bug report
+     - failing tests
+     - optional execution trace / oracle
+   - Manipulation:
+     - raw benchmark fields are normalized into a canonical task object
+     - repository is materialized locally
+2. Parse and index the repository
+   - The system parses the repository once and builds reusable structural metadata.
+   - Manipulation:
+     - source files → ASTs
+     - file contents → symbol table
+     - imports / function references → repository graph
+3. Select relevant context from the local repository
+   - The system identifies the code regions most relevant to the bug report and failing test.
+   - Manipulation:
+     - task + repo index → candidate files/functions/tests
+     - local context selection reduces prompt noise
+4. Construct the neural proposal prompt
+   - The selected context is converted into the input prompt for the LLM.
+   - Manipulation:
+     - bug report + failing tests + code context → prompt
+5. Generate candidate patch
+   - The LLM proposes a candidate code change.
+   - Manipulation:
+     - prompt text → candidate patch / diff
+6. Apply patch and isolate impacted program region
+   - The candidate patch is applied to a temporary working copy and the system identifies which program region should be symbolically analyzed.
+   - Manipulation:
+     - diff → patched source
+     - patched source + AST → impacted function / variables / conditions
+7. Extract symbolic constraints
+   - The system translates the sliced program behavior into logical constraints suitable for the solver.
+   - Manipulation:
+     - Python code + type/domain assumptions → symbolic variables + path conditions + postconditions
+8. Run symbolic verification
+   - The solver checks whether the patched program violates any of the logical constraints.
+   - Manipulation:
+     - symbolic problem → SAT / UNSAT / UNKNOWN / TIMEOUT
+9. Generate counterexample
+   - If the solver finds a violating assignment, the system converts it into a concrete counterexample.
+   - Manipulation:
+     - solver model → failing input + failure description
+10. Transform symbolic failure into critique
+    - The counterexample is converted into natural-language feedback for the next patch iteration.
+    - Manipulation:
+      - structured symbolic failure → concise natural-language critique
+11. Refine patch using counterexample-guided feedback
+    - The critique is fed back into the next LLM prompt.
+    - Manipulation:
+      - previous prompt + previous patch + critique → refined prompt → refined patch
+12. Repeat until convergence
+    - The same lifecycle repeats until:
+      - no counterexample is found
+      - iteration budget is exhausted
+    - Manipulation:
+      - iterative update of:
+        - patch
+        - slice
+        - symbolic constraints
+        - solver outputs
+        - critiques
 
-#### **0. Setup + Data Preparation + Processing**
+#### **Datastructures**
 
-##### **0. Setup + Repo Structure**
+1. TaskObject (Canonical Input Representation)
+   ```python
+   TaskObject = {
+   "task_id": str,
+   "repo_path": str,
+   "bug_report": str,
+   "failing_tests": list[dict],
+   "execution_trace": list | None,
+   # metadata
+   "repo_name": str,
+   "base_commit": str,
+   "dataset": str,
+   }
+   ```
+   - Purpose:
+     - Unified representation of a bug-fixing task
+     - Entry point for the entire pipeline
+2. RepoIndex (Static Program Representation)
+   ```python
+   RepoIndex = {
+   "files": dict[str, str],              # filepath → source code
+   "ast_map": dict[str, AST],            # filepath → AST
+   "symbol_table": dict[str, dict],      # symbol → metadata
+   "import_graph": dict[str, list[str]],
+   "call_graph": dict[str, list[str]],
+   }
+   ```
+   - Purpose:
+     - Parsed, structured view of the repository
+   - Enables:
+     - context selection
+     - slicing
+     - dependency reasoning
+3. Context Object (Pre-Neural Selection)
+   ```python
+   Context = {
+   "relevant_files": list[str],
+   "relevant_functions": list[str],
+   "relevant_tests": list[str],
+   "code_chunks": list[str],
+   }
+   ```
+   - Purpose:
+     - Reduced, task-specific view of the repo
+     - Used to construct the LLM prompt
+4. Prompt Object
+   ```python
+   Prompt = {
+   "bug_report": str,
+   "code_context": list[str],
+   "failing_tests": list[str],
+   "previous_patch": str | None,
+   "critique": str | None,
+   }
+   ```
+   - Purpose:
+     - Structured input to the LLM
+     - Evolves across iterations
+5. Patch Object
+   ```python
+   Patch = {
+   "iteration": int,
+   "target_file": str,
+   "diff": str,
+   "applied": bool,
+   }
+   ```
+   - Purpose:
+     - Represents a candidate code modification
+     - Central object in the CEGF loop
+6. Program Slice (Post-Patch Structural Focus)
+   ```python
+   ProgramSlice = {
+   "functions": list[str],
+   "variables": list[str],
+   "conditions": list[str],
+   "source_snippet": str,
+   }
+   ```
+   - Purpose:
+     - Narrowed region for symbolic reasoning
+     - Reduces solver complexity
+7. Symbolic Problem (Constraint Representation)
+   ```python
+   SymbolicProblem = {
+   "function_name": str,
+   "variables": dict[str, str],          # var → type
+   "path_constraints": list[str],
+   "postconditions": list[str],
+   }
+   ```
+   - Purpose:
+     - Formal encoding of program behavior
+     - Input to solver
+8. Solver Result
+   ```python
+   SolverResult = {
+   "status": str,   # "sat" | "unsat" | "unknown" | "timeout"
+   "model": dict | None,
+   "violated_property": str | None,
+   }
+   ```
+   - Purpose:
+     - Output of symbolic verification
+     - Determines whether refinement is needed
+9. Counterexample
+   ```python
+   Counterexample = {
+   "inputs": dict,
+   "observed_failure": str,
+   "violated_property": str,
+   "affected_function": str,
+   }
+   ```
+   - Purpose:
+     - Concrete failing case derived from solver
+     - Bridges symbolic → concrete
+10. Critique Object (Feedback Representation)
+    ```python
+    Critique = {
+    "text": str,
+    "structured": {
+    "function": str,
+    "inputs": dict,
+    "error": str,
+    }
+    }
+    ```
+    - Purpose:
+      - Converts failure into actionable feedback
+      - Used for patch refinement
+11. Iteration State (Core Loop State Object)
+    ```python
+    IterationState = {
+    "task": Task,
+    "context": Context,
+    "prompt": Prompt,
+    "patch": Patch,
+    "slice": ProgramSlice,
+    "symbolic_problem": SymbolicProblem,
+    "solver_result": SolverResult,
+    "counterexample": Counterexample | None,
+    "critique": Critique | None,
+    }
+    ```
+    - Purpose:
+      - Captures the full state at each iteration
+    - Enables:
+      - debugging
+      - logging
+      - replay
+12. Run Metadata
+    ```python
+    RunMetadata = {
+    "run_id": str,
+    "config": dict,
+    "tasks": list[str],
+    "start_time": str,
+    "end_time": str,
+    }
+    ```
+    - Purpose:
+      - Tracks experiment-level execution
+      - Ensures reproducibility
+13. Final Result Object
+    ```python
+    FinalResult = {
+    "task_id": str,
+    "success": bool,
+    "final_patch": Patch,
+    "num_iterations": int,
+    "termination_reason": str,
+    }
+    ```
+    - Purpose:
+      - Final output used for evaluation
 
-###### Low-level Pipeline Steps
+#### **System Components**
 
-1. **Initialize repository layout and execution entrypoints**
-   1. Create the top-level folders for:
-      - source code
-      - configs
-      - data
-      - artifacts
-      - tests
-      - docs
-   2. Separate code into:
-      - pipeline orchestration
-      - retrieval
-      - patch generation
-      - slicing
-      - symbolic reasoning
-      - evaluation
-   3. Define one main entrypoint for:
-      - single-task execution
-      - benchmark execution
-      - ablation execution
-   4. Create placeholder modules for each pipeline stage so the repo structure matches the conceptual pipeline early
-   5. Decide where temporary working repos will live during task execution
-   6. Decide where output artifacts will be written and how iteration folders are organized
-2. **Set up environment configuration and dependency management**
-   1. Create dependency manifest:
-      - Python packages
-   2. Add a reproducible environment setup path:
-      - venv/ Docker
-   3. Define version tracking for:
-      - Python version
-      - dependency versions
-      - prompt versions
-      - schema versions
-3. **Set up logging, caching, and reproducibility infrastructure**
-   1. Define where logs are written:
-      - run logs
-      - error logs
-      - solver logs
-      - patch logs
-   2. Define cache directories for:
-      - retrieval embeddings
-      - retrieved context
-      - solver outputs
-      - prompt outputs
-   3. Create run-level metadata file storing:
-      - run id
-      - config used
-      - task ids
-      - timestamp
-4. **Write README and developer-facing documentation**
-   1. Fill out the README with:
-      - project overview
-      - pipeline stages
-      - setup instructions
-      - how to run one task
-      - how to run all tasks
-      - artifact structure
+- Define:
+  - components
+  - dataflow
+  - interactions
 
-###### Key Components (Psuedocode + Conceptual Steps) + Stepwise ouput artifacts
+---
 
+1. Task Loader & Normalizer
+   - Role:
+     - Ingest raw benchmark data and convert it into a canonical task representation
+   - Input → Output:
+     - Input:
+       - raw dataset entry (JSON / SWE-bench row)
+     - Output:
+       - Task object (normalized schema)
+   - Interaction:
+     - Feeds into Repository Indexer
+     - Initializes the Iteration State
+2. Repository Indexer (Static Analysis Layer)
+   - Role:
+     - Parse and structure the repository into reusable program representations
+   - Input → Output:
+     - Input:
+       - Task.repo_path
+     - Output:
+       - RepoIndex (ASTs, symbol table, graphs)
+   - Interaction:
+     - Used by Context Selector and Impact Slicer
+     - Cached and reused across iterations
+3. Context Selector (Bug Localization Layer)
+   - Role:
+     - Identify the most relevant code regions for the bug
+   - Input → Output:
+     - Input:
+       - Task
+       - RepoIndex
+     - Output:
+       - Context (relevant files, functions, code chunks)
+   - Interaction:
+     - Feeds into Prompt Builder
+     - Reduces input size and noise for the LLM
+4. Prompt Builder
+   - Role:
+     - Construct structured prompts for the LLM using task + context + feedback
+   - Input → Output:
+     - Input:
+       - Task
+       - Context
+       - optional Critique
+       - optional previous Patch
+     - Output:
+       - Prompt
+   - Interaction:
+     - Feeds into Neural Patch Generator
+     - Updated every iteration
+5. Neural Patch Generator (LLM Agent)
+   - Role:
+     - Generate candidate patches using the LLM
+   - Input → Output:
+     - Input:
+       - Prompt
+     - Output:
+       - Patch
+   - Interaction:
+     - Feeds into:
+       - Patch Applier
+       - Impact Slicer
+     - Receives feedback via updated prompts
+6. Patch Applier
+   - Role:
+     - Apply candidate patches to a temporary working copy of the repository
+   - Input → Output:
+     - Input:
+       - Patch
+       - Task.repo_path
+     - Output:
+       - patched repository state
+   - Interaction:
+     - Feeds into:
+       - Impact Slicer
+       - optional test execution
+     - Ensures isolation via per-task workspace
+7. Impact Slicer (Post-Patch Localization)
+   - Role:
+     - Identify the program region affected by the patch for analysis
+   - Input → Output:
+     - Input:
+       - patched code
+       - RepoIndex
+       - Patch
+     - Output:
+       - ProgramSlice
+   - Interaction:
+     - Feeds into Constraint Extractor
+     - Reduces symbolic reasoning scope
+8. Constraint Extractor
+   - Role:
+     - Convert program behavior into a formal symbolic representation
+   - Input → Output:
+     - Input:
+       - ProgramSlice
+     - Output:
+       - SymbolicProblem
+   - Interaction:
+     - Feeds into Symbolic Verifier
+     - Encodes logic for solver reasoning
+9. Symbolic Verifier (Solver Engine)
+   - Role:
+     - Check whether the patch satisfies logical constraints
+   - Input → Output:
+     - Input:
+       - SymbolicProblem
+     - Output:
+       - SolverResult (sat / unsat / unknown / timeout)
+   - Interaction:
+     - If sat → passes to Counterexample Generator
+     - If unsat → signals termination
+10. Counterexample Generator
+    - Role:
+      - Convert solver output into a concrete failing input
+    - Input → Output:
+      - Input:
+        - SolverResult
+      - Output:
+        - Counterexample
+    - Interaction:
+      - Feeds into Feedback Generator
+      - Bridges symbolic → concrete domain
+11. Feedback Generator (Critique Builder)
+    - Role:
+      - Translate counterexamples into natural-language critiques
+    - Input → Output:
+      - Input:
+        - Counterexample
+      - Output:
+        - Critique
+    - Interaction:
+      - Feeds back into Prompt Builder
+      - Drives the CEGF loop
+12. Iteration Controller (CEGF Loop Manager)
+    - Role:
+      - Manage iterative refinement and termination conditions
+    - Input → Output:
+      - Input:
+        - IterationState
+        - SolverResult
+      - Output:
+        - updated IterationState
+        - final termination decision
+    - Interaction:
+      - Coordinates:
+        - patch generation
+        - symbolic verification
+        - feedback loop
+      - Enforces:
+        - max iterations
+        - convergence criteria
+13. Evaluation Engine
+    - Role:
+      - Measure system performance across tasks and runs
+    - Input → Output:
+      - Input:
+        - FinalResult
+        - run artifacts
+      - Output:
+        - metrics (accuracy, iterations, tokens, runtime)
+    - Interaction:
+      - Consumes outputs from Iteration Controller
+      - Produces results for analysis
+
+### **Execution Details (HOW it works)**
+
+- Provide a **step-by-step breakdown**
+- **Output of this section should be:**
+  - A **fully specified execution process**
+
+---
+
+#### \*\*0. Pipeline
+
+##### **0. Setup**
+
+###### **Key Components / Deliverables**
+
+- Project repository
+- local code environment setup
+  - version control
+  - tooling
+  - logging
+  - ci/cd pipeline
+  - file structure
+- Core Schemas
+- Core constants
+- Basic README
 - [[Symbiotic-SWE-README]]
 
-##### **1. Dataset Preparation + Setup**
-
-- Do **not** parse only the currently retrieved files here. Parse and index the repo once, then retrieve/slice from that cached structure later.
-
-###### Low-level Pipeline Steps
-
-- [Fill out once Key Components is squared away]
-
-1. [Main Step during this stage Name - there can be multiple of these]
-   1. [Substeps of Main step - used to understand code implementation better/ really understand what is happening during this Main step]
-
-- (Repeat for each stage)
-
-1. First, the system receives a bug instance from SWE-bench
-   1. Load task JSON or benchmark row
-   2. Materialize the target repository snapshot locally
-   3. Parse relevant Python files into ASTs
-   4. Build repository-level metadata such as imports and call graph
-   5. Load failing tests, traces, and issue text
-   6. Normalize everything into a single task object
-   7. Persist initial artifacts before any retrieval or patch generation
-
-###### Key Components (Psuedocode + Conceptual Steps) + Stepwise ouput artifacts
-
-- [[AST Parsing]]
-- [[Repository Graph Construction]]
-- [[Static Program Analysis]]
-- [[Test Harness Execution]]
-- benchmark task JSON or dataset row
-- local cloned repository snapshot
-- failing test files
-- optional execution traces/logs
-- issue description / bug report text
-- `workspace/repo_snapshot/`
-- `workspace/task.json`
-- `workspace/ast_map.pkl`
-- `workspace/call_graph.json`
-- `workspace/import_graph.json`
-- `workspace/failing_tests.json`
-- [[]] or `filename`
-  - key function
-
-###### Failure Modes
-
-- [mitigations]
-
-###### Tests
-
-- `filename`
-  - tests to conduct
-
-###### Algorithms + Key Data Manipulations
-
--
-
-###### Data Structures
-
-```python
-repo = {
-"files": Dict[str, str], # filepath -> source code
-"ast_map": Dict[str, AST], # filepath -> parsed AST
-"call_graph": Dict[str, List[str]],
-"import_graph": Dict[str, List[str]],
-}
-
-task = {
-"task_id": str,
-"bug_report": str,
-"repo_path": str,
-"failing_tests": List[Dict],
-"execution_trace": Optional[List[str]],
-}
-```
-
-###### Input Example
-
-```python
-task = {
-"task_id": "toy_sumlist_001",
-"bug_report": "Function fails when list is empty",
-"repo_path": "/workspace/repo_snapshot",
-"failing_tests": [
-{"name": "test_sum_list_empty", "input": [], "expected": 0, "actual": "ZeroDivisionError"}
-],
-"execution_trace": None,
-}
-```
-
-###### Output Example
-
-```python
-state = {
-"task": task,
-"repo": repo,
-"context": [],
-"patch": None,
-"slice": None,
-"constraints": None,
-"solver_result": None,
-"counterexample": None,
-"critique": None,
-"history": [],
-"metrics": {"iteration": 0},
-}
-```
-
-#### **1. Pipeline**
-
-##### **1. Context Retrieval (RAG over Codebase)**
-
-- Pure semantic retrieval is often not enough for debugging. Your own framing emphasizes repository-level dependencies and logic-heavy bugs, so retrieval should support both **semantic** and **structural** expansion.
-
-###### Key Components (Psuedocode + Conceptual Steps) + Stepwise ouput artifacts
-
-- [[Code Embeddings]]
-- [[Retriever]]
-- [[Vector Database]]
-- [[Cosine Similarity]]
-- [[Call Graph]]
-- [[Context Expansion]]
-- repo snapshot
-- AST map
-- call graph
-- bug report
-- optional failing test names / traces
-- `retrieval/chunks.jsonl`
-- `retrieval/embeddings.npy`
-- `retrieval/ranked_candidates.json`
-- `retrieval/topk_context.json`
-- [[]] or `filename`
-  - key function
-
-###### Tests
-
-- `filename`
-  - tests to conduct
-
-###### Data Structures
-
-```python
-code_chunk = {
-"chunk_id": str,
-"filepath": str,
-"symbol": str,
-"text": str,
-"embedding": Optional[List[float]],
-}
-
-retrieved_context = {
-"query": str,
-"topk": List[Dict],
-"expanded_neighbors": List[Dict],
-}
-```
-
-###### Input Example
-
-```python
-query = "Function fails when list is empty"
-
-candidate_chunks = [
-{"chunk_id": "c1", "filepath": "utils/math.py", "symbol": "sum_list", "text": "def sum_list(lst): return sum(lst)/len(lst)"},
-{"chunk_id": "c2", "filepath": "tests/test_math.py", "symbol": "test_sum_list_empty", "text": "def test_sum_list_empty(): assert sum_list([]) == 0"},
-]
-```
-
-###### Output Example
-
-```python
-retrieved_context = {
-"query": "Function fails when list is empty",
-"topk": [
-{"chunk_id": "c1", "filepath": "utils/math.py", "symbol": "sum_list"},
-{"chunk_id": "c2", "filepath": "tests/test_math.py", "symbol": "test_sum_list_empty"},
-],
-"expanded_neighbors": [],
-}
-```
-
-###### Failure Modes
-
-- [mitigations]
-
-###### Implementation Steps
-
-1. **Relevant code context is retrieved from the repository**
-   1. Split repository files into retrievable code units such as functions, classes, and possibly methods
-   2. Build metadata for each code chunk:
-      1. filepath
-      2. symbol name
-      3. docstring
-      4. imports
-      5. callers/callees if available
-   3. Embed the bug report and the code chunks
-   4. Rank candidate chunks with similarity search
-   5. Expand retrieval with structural neighbors when needed:
-      1. same file
-      2. caller/callee
-      3. imported helper
-   6. Build the final retrieved context package
-   7. Persist ranked candidates and chosen context
-
-##### **2. Neural Proposal (LLM Patch Generation)**
-
-- Separate:
-  - raw model output
-  - parsed patch
-  - applied patch state
-- Those are different failure points.
-
-###### Key Components (Psuedocode + Conceptual Steps) + Stepwise ouput artifacts
-
-- [[LLM Inference]]
-- [[Prompt Engineering]]
-- [[Unified Diff]]
-- [[Patch Validation]]
-- retrieved context
-- bug report
-- failing test summary
-- repository metadata
-- `patches/iteration_0.diff`
-- `prompts/iteration_0.txt`
-- `llm_outputs/iteration_0.json`
-- `patches/iteration_0_apply_log.txt`
-- [[]] or `filename`
-  - key function
-
-###### Failure Modes
-
-- [mitigations]
-
-###### Tests
-
-- `filename`
-  - tests to conduct
-
-###### Data Structures
-
-```python
-prompt = {
-"system": str,
-"user": str,
-}
-
-patch = {
-"raw_text": str,
-"diff": str,
-"target_files": List[str],
-"parse_ok": bool,
-"syntax_ok": bool,
-}
-```
-
-###### Input Example
-
-```python
-prompt = {
-"system": "You are a software repair agent. Return a unified diff only.",
-"user": """
-Bug report: Function fails when list is empty.
-Relevant code:
-def sum_list(lst):
-return sum(lst)/len(lst)
-
-Failing test:
-sum_list([]) should return 0
-"""
-}
-```
-
-###### Output Example
-
-```python
-patch = {
-"raw_text": """--- a/utils/math.py
-+++ b/utils/math.py
-@@
-def sum_list(lst):
-- return sum(lst)/len(lst)
-+ if len(lst) == 0:
-+ return 0
-+ return sum(lst)/len(lst)
-""",
-"diff": "...",
-"target_files": ["utils/math.py"],
-"parse_ok": True,
-"syntax_ok": True,
-}
-```
-
-###### Implementation Steps
-
-1. \*\*The LLM generates a patch from Context + Bug
-   1. Build a prompt using:
-      - bug report
-      - retrieved code context
-      - failing test summary
-      - patch format instructions
-   2. Ask the LLM for a unified diff or exact replacement
-   3. Parse the response into a patch object
-   4. Validate patch syntax
-   5. Attempt dry-run application to the local repo
-   6. Record model output even if patch parsing fails
-   7. Store the patch candidate and prompt for traceability
-
-##### **3. Impact Slicing (Static Analysis)**
-
-- Do not slice only by changed lines. Slice by **semantic effect**: changed conditions, returned values, raised exceptions, accessed collections, and divisions/indexing operations.
-
-###### Key Components (Psuedocode + Conceptual Steps) + Stepwise ouput artifacts
-
-- [[Program Slicing]]
-- [[Static Program Analysis]]
-- [[Control Flow Graph]]
-- [[Data Flow Analysis]]
-- [[Call Graph]]
-- repo AST
-- call graph
-- patch diff
-- patched working tree
-- `analysis/modified_nodes.json`
-- `analysis/program_slice.json`
-- `analysis/cfg.json`
-- `analysis/dfg.json`
-- `analysis/slice_debug.txt`
-- [[]] or `filename`
-  - key function
-
-###### Failure Modes
-
-- [mitigations]
-
-###### Tests
-
-- `filename`
-  - tests to conduct
-
-###### Data Structures
-
-```python
-program_slice = {
-"target_functions": List[str],
-"modified_nodes": List[Dict],
-"affected_variables": List[str],
-"path_conditions": List[str],
-"related_tests": List[str],
-}
-```
-
-###### Input Example
-
-```python
-patched_function = """
-def sum_list(lst):
-if len(lst) == 0:
-return 0
-return sum(lst)/len(lst)
-"""
-```
-
-###### Output Example
-
-```python
-program_slice = {
-"target_functions": ["sum_list"],
-"modified_nodes": [{"type": "If", "lineno": 2}],
-"affected_variables": ["lst"],
-"path_conditions": ["len(lst) == 0", "len(lst) > 0"],
-"related_tests": ["test_sum_list_empty"],
-}
-```
-
-###### Implementation Steps
-
-- [Fill out once Key Components is squared away]
-
-1. [Main Step during this stage Name - there can be multiple of these]
-   1. [Substeps of Main step - used to understand code implementation better/ really understand what is happening during this Main step]
-
-- (Repeat for each stage)
-
-1. **Then, we identify what parts of the program are affected by the patch**
-   1. Apply the candidate patch to a temporary working tree
-   2. Reparse modified files
-   3. Detect changed AST nodes
-   4. Map changed nodes back to enclosing symbols
-   5. Traverse local CFG/DFG to identify:
-      1. affected variables
-      2. branch conditions
-      3. dependent statements
-   6. Expand to related functions if there are direct callers/callees
-   7. Extract the smallest slice sufficient for symbolic reasoning
-   8. Persist both the raw impacted region and the reduced slice
-
-##### **4. Constraint Extraction (Program → Logic)**
-
-- You need a clearly defined **supported subset of Python** for v1. For example:
-  - arithmetic
-  - boolean predicates
-  - comparisons
-  - list length checks
-  - simple loops if CrossHair can handle them
-- Without that boundary, implementation can sprawl.
-
-###### Key Components (Psuedocode + Conceptual Steps) + Stepwise ouput artifacts
-
-- [[SMT Encoding]]
-- [[CrossHair]]
-- [[Z3]]
-- [[First Order Logic]]
-- [[PEP 484]]
-- sliced program
-- type hints
-- assertions
-- patched source code
-- `constraints/constraints.smt2`
-- `constraints/variables.json`
-- `constraints/spec.json`
-- `constraints/unsupported_nodes.json`
-- [[]] or `filename`
-  - key function
-
-###### Failure Modes
-
-- [mitigations]
-
-###### Tests
-
-- `filename`
-  - tests to conduct
-
-###### Data Structures
-
-```python
-symbolic_problem = {
-"function_name": str,
-"variables": Dict[str, str],
-"path_constraints": List[str],
-"postconditions": List[str],
-"unsupported_nodes": List[str],
-}
-```
-
-###### Algorithms + Key Data Manipulations
-
--
-
-###### Input Example
-
-```python
-function_signature = "def sum_list(lst: list[int]) -> float"
-path_conditions = ["len(lst) == 0", "len(lst) > 0"]
-```
-
-###### Output Example
-
-```python
-symbolic_problem = {
-"function_name": "sum_list",
-"variables": {"lst": "List[Int]"},
-"path_constraints": ["len(lst) == 0", "len(lst) > 0"],
-"postconditions": [
-"len(lst) == 0 -> result == 0",
-"len(lst) > 0 -> result == sum(lst)/len(lst)"
-],
-"unsupported_nodes": [],
-}
-```
-
-###### Implementation Steps
-
-- [Fill out once Key Components is squared away]
-
-1. [Main Step during this stage Name - there can be multiple of these]
-   1. [Substeps of Main step - used to understand code implementation better/ really understand what is happening during this Main step]
-
-- (Repeat for each stage)
-
-1. **Now, the sliced program is converted into logical SMT constraints**
-   1. Read the target function signature and type hints
-   2. Collect explicit assertions and guards
-   3. Infer basic preconditions from code patterns when possible
-   4. Normalize path conditions from the slice
-   5. Convert supported Python constructs into solver expressions
-   6. Build a specification object:
-      1. variables
-      2. domains
-      3. path constraints
-      4. desired properties
-   7. Serialize the resulting symbolic problem
-   8. Record unsupported constructs for debugging/fallback
-
-##### **5. Symbolic Execution (Search over Input Space)**
-
-1. **Then, the solver tries to break the patch**
-   1. Load the symbolic problem into CrossHair/Z3
-   2. Formulate the negation of the desired property
-   3. Search for a satisfying assignment
-   4. If SAT, extract the solver model
-   5. If UNSAT, mark the current patch as solver-safe under modeled assumptions
-   6. If UNKNOWN or timeout, record partial status
-   7. Persist the raw solver response and summary status
-
-##### Key Components
-
-- [[Symbolic Execution]]
-- [[Constraint Solving]]
-- [[Path Exploration]]
-- [[Satisfiability]]
-- [[CrossHair]]
-- [[Z3]]
-
-##### Input Artifacts
-
-- SMT constraints
-- symbolic problem spec
-- solver config
-
-##### Data Structures
-
-```python
-solver_result = {
-"status": "sat" | "unsat" | "unknown" | "timeout",
-"model": Optional[Dict[str, Any]],
-"violated_property": Optional[str],
-"solver_time_ms": int,
-}
-```
-
-##### Input Example
-
-```python
-symbolic_problem = {
-"function_name": "sum_list",
-"variables": {"lst": "List[Int]"},
-"postconditions": ["len(lst) == 0 -> result == 0"]
-}
-```
-
-##### Output Example
-
-```python
-solver_result = {
-"status": "sat",
-"model": {"lst": []},
-"violated_property": "function raises division by zero for empty list",
-"solver_time_ms": 47,
-}
-```
-
-##### Output Artifacts
-
-- `solver/model.json`
-- `solver/solver_result.json`
-- `solver/log.txt`
-
-##### Important implementation note
-
-- Treat `unknown` and `timeout` as first-class outcomes, not failures of your code. They are normal solver states.
-
-##### **6. Counterexample Generation (CEGF Core)**
-
-1. **If the solver finds a violation, it produces a counterexample**
-   1. Interpret the solver model into Python-level input values
-   2. Replay the patched function or patched repo behavior with those inputs
-   3. Confirm the failure is reproducible concretely
-   4. Capture:
-      1. failing input
-      2. failing branch/path
-      3. observed exception or violated assertion
-   5. Format a normalized counterexample object
-   6. Store both structured and human-readable versions
-
-##### Key Components
-
-- [[Counterexample Guided Feedback]]
-- [[Concrete Replay]]
-- [[Constraint Violation Detection]]
-
-##### Input Artifacts
-
-- solver model
-- solver result
-- patched working tree
-- constraints/spec
-
-##### Data Structures
-
-```python
-counterexample = {
-"inputs": Dict[str, Any],
-"violated_property": str,
-"observed_failure": str,
-"affected_function": str,
-}
-```
-
-##### Input Example
-
-```python
-solver_result = {
-"status": "sat",
-"model": {"lst": []},
-"violated_property": "len(lst)==0 should imply result==0"
-}
-```
-
-##### Output Example
-
-```python
-counterexample = {
-"inputs": {"lst": []},
-"violated_property": "empty list should return 0",
-"observed_failure": "ZeroDivisionError",
-"affected_function": "sum_list",
-}
-```
-
-##### Output Artifacts
-
-- `counterexamples/iteration_0.json`
-- `counterexamples/iteration_0_replay.txt`
-
-##### Important implementation note
-
-- Always replay the counterexample concretely when possible. Solver-generated examples are useful, but concrete replay gives you a cleaner critique and catches encoding mistakes.
-
-##### **7. Feedback Transformation (Symbolic → Natural Language)**
-
-1. **Now, convert formal failure into LLM-readable critique**
-   1. Read the structured counterexample
-   2. Extract:
-      1. failing input
-      2. violated condition
-      3. affected symbol
-      4. likely cause
-   3. Fill a fixed explanation template
-   4. Optionally ask an LLM to lightly rewrite for clarity
-   5. Keep the critique short, factual, and grounded
-   6. Save both machine-readable and final prompt-ready versions
-
-##### Key Components
-
-- [[Verification-as-Prompt]]
-- [[Prompt Engineering]]
-- [[Program Explanation]]
-- [[LLM Tool Feedback]]
-
-##### Input Artifacts
-
-- counterexample
-- patch
-- symbolic problem spec
-
-##### Data Structures
-
-```python
-critique = {
-"short_text": str,
-"structured": Dict[str, Any],
-}
-```
-
-##### Input Example
-
-```python
-counterexample = {
-"inputs": {"lst": []},
-"observed_failure": "ZeroDivisionError",
-"affected_function": "sum_list"
-}
-```
-
-##### Output Example
-
-```python
-critique = {
-"short_text": "Your patch still fails in sum_list when lst = []. The function divides by len(lst), which is 0, causing ZeroDivisionError.",
-"structured": {
-"function": "sum_list",
-"inputs": {"lst": []},
-"error": "ZeroDivisionError"
-}
-}
-```
-
-##### Output Artifacts
-
-- `feedback/iteration_0.txt`
-- `feedback/iteration_0.json`
-
-##### Important implementation note
-
-- Keep the critique bounded. Do not dump raw solver output into the prompt.
-
-##### **8. CEGF Loop (Closed Feedback System)**
-
-1. **Now, feed this back into the LLM**
-   1. Build a refinement prompt containing:
-      1. original bug report
-      2. relevant code context
-      3. previous patch
-      4. critique
-   2. Ask the LLM for a revised patch
-   3. Parse and validate the revised patch
-   4. Append this iteration to trajectory history
-   5. Increment metrics
-   6. Route back into slicing and solver validation
-
-##### Key Components
-
-- [[Iterative Refinement]]
-- [[Feedback Loop]]
-- [[Agent Memory]]
-- [[Repair Trajectory]]
-
-##### Input Artifacts
-
-- previous patch
-- critique
-- previous prompt
-- retrieved context
-
-##### Data Structures
-
-```python
-iteration_record = {
-    "iteration": int,
-    "prompt_path": str,
-    "patch_path": str,
-    "critique_path": str,
-    "solver_status": str,
-}
-```
-
-##### Input Example
-
-```python
-refinement_prompt = {
-    "bug_report": "Function fails when list is empty",
-    "previous_patch": "...",
-    "critique": "Your patch still fails when lst = [] ..."
-}
-```
-
-##### Output Example
-
-```python
-refined_patch = """--- a/utils/math.py
-+++ b/utils/math.py
-@@
-def sum_list(lst):
-- return sum(lst)/len(lst)
-+ if len(lst) == 0:
-+ return 0
-+ return sum(lst)/len(lst)
-"""
-```
-
-##### Output Artifacts
-
-- `patches/iteration_k.diff`
-- `prompts/iteration_k.txt`
-- `history/trajectory.json`
-
-##### Important implementation note
-
-- You should keep the whole repair trajectory. This helps with debugging, ablations, and later analysis of whether counterexamples reduce search entropy, which is one of your stated contributions.
-
-##### **9. Convergence / Termination**
-
-1. Loop continues until ✅ No counterexamples found OR ⛔ iteration budget exceeded
-   1. If solver result is `unsat`, mark success under current model assumptions
-   2. If iterations exceed max budget, stop
-   3. If solver repeatedly returns `unknown` or timeout, optionally fall back to test-only validation
-   4. Aggregate metrics after every iteration
-   5. Write a final run summary
-
-##### Key Components
-
-- [[Stopping Criteria]]
-- [[Evaluation Metrics]]
-- [[Tokens-per-Success]]
-
-##### Input Artifacts
-
-- solver results
-- iteration history
-- token usage log
-
-##### Data Structures
-
-```python
-metrics = {
-"num_iterations": int,
-"tokens_used": int,
-"success": bool,
-"termination_reason": str,
-}
-```
-
-##### Input Example
-
-```python
-history = [
-{"iteration": 0, "solver_status": "sat"},
-{"iteration": 1, "solver_status": "unsat"},
-]
-```
-
-##### Output Example
-
-```python
-metrics = {
-"num_iterations": 2,
-"tokens_used": 1200,
-"success": True,
-"termination_reason": "solver_unsat"
-}
-```
-
-##### Output Artifacts
-
-- `metrics/run_summary.json`
-- `logs/full_trace.json``
-
-## **Artifact Information**
-
-- **Purpose:**
-  - Define all **artifacts** used, produced, and evaluated in the system
-  - Ensure **reproducibility, traceability, and clarity of data flow**
-  - Inputs → Transformations → Intermediate Artifacts → Outputs → Evaluation Artifacts
-- **Key Question:**
-  - _What concrete objects (data, models, files, outputs) flow through the system, and how are they structured, versioned, and used?_
-- **Constraints:**
-  - No algorithmic explanations (belongs to Proposed Technique)
-  - No performance claims (belongs to Evaluation)
-  - Must clearly distinguish:
-    - **Inputs**
-    - **Intermediate artifacts**
-    - **Outputs**
-  - Every artifact should be:
-    - identifiable
-    - reproducible
-    - versionable
-
----
-
-### **Input Artifacts (What the system consumes)**
-
-- Define all external inputs to the system
-- **Output of this section should be:**
-  - A **fully specified input environment**
-
----
-
-#### <b>Data</b>
-
-- What datasets are used?
-- What is their structure and format?
-- What preprocessing is applied?
-- Inlcude:
-  - Dataset name + source
-  - Size / scale
-  - Format (JSON, CSV, text, etc.)
-  - Access method (local, API, repo)
-
----
-
-##### Datasets #TODO
-
-- SWE-bench
-- Source: [https://github.com/SWE-bench/SWE-bench](https://github.com/SWE-bench/SWE-bench)
-- Provides:
-  - real-world GitHub issues
-  - repository snapshots
-  - failing test cases
-
-##### Structure & Format
-
-- Raw format:
-  - JSON + repository directories
-- Each task includes:
-
-```python
-task = {
-    "task_id": str,
-    "repo_path": str,
-    "bug_report": str,
-    "failing_tests": list,
-    "execution_trace": list | None,
-}
-```
-
-- Associated inputs:
-  - repository snapshot (local file tree)
-  - test files
-  - optional logs / traces
-
-##### Scale
-
-- Full dataset:
-  - hundreds of real-world tasks
-- Experimental subset:
-  - logic-heavy filtered subset (≈20–100 tasks)
-  - optionally manually annotated
-
-#### Models
-
-- What models are used (if any)?
-- Include:
-  - Model name / architecture
-  - Version / checkpoint
-  - Role in system (e.g., embedding, generation, scoring)
-
----
-
-1. Repair / Generation Model
-   - **Model:** GPT-4o
-   - **Role:**
-     - generate initial patches
-     - refine patches using counterexample-guided feedback
-     - optionally rewrite critiques into prompt-friendly format
-2. Optional Judge Model
-   - **Model:** GPT-4o (or similar LLM)
-   - **Role:**
-     - evaluate feedback quality
-     - compare baseline vs Symbiotic-SWE outputs
-3. Symbolic Reasoning Model
-   - **Framework:** CrossHair
-   - **Backend Solver:** Z3
-   - **Role:**
-     - convert program behavior → logical constraints
-     - explore input space symbolically
-     - generate counterexamples
-4. Optional Retrieval / Embedding Model
-   - **Model:** Code embedding model (configurable)
-   - **Role:**
-     - encode code chunks
-     - enable similarity-based retrieval for context
-
-#### Tools / Infrastructure
-
-- What external tools are required?
-- Examples:
-  - vector databases
-  - solvers
-  - APIs
-  - frameworks
-- **Output of this section should be:**
-  - A **fully specified input environment**
-
----
-
-##### 1. Core Tools
-
-- [[GPT-4o]]
-  - LLM API for patch generation and refinement
-- [[CrossHair]]
-  - symbolic execution framework for Python
-- [[Z3]]
-  - SMT solver for constraint satisfaction and counterexample generation
-
-##### 2. Program Analysis Utilities
-
-- [[AST Parsing]]
-  - extract program structure
-- [[Control Flow Graph]]
-- [[Data Flow Analysis]]
-  - used for impact slicing and dependency tracking
-- **Additional Utilities**
-  - diff parsing (unified diff → AST updates)
-  - function boundary detection
-  - dependency traversal (call graph expansion)
-
-##### 3. Environment Configuration
-
-- Python version
-- dependency list (requirements.txt)
-- API keys / environment variables
-
----
-
-- Runtime Requirements
-  - Python runtime (>=3.9)
-  - access to LLM API
-  - local filesystem for repo snapshots
-  - sufficient memory for symbolic execution
-- Optional Enhancements
-  - virtual environment (venv / conda)
-  - Docker container for reproducibility
-
-##### 4. Testing Environment
-
-- Python test runner (pytest / unittest)
-- sandboxed execution environment:
-  - isolated working directory per task
-  - prevents state leakage between runs
-- test replay system:
-  - rerun failing tests after patch application
-  - validate counterexample concretely
-- Key Capabilities
-  - patch application + rollback
-  - deterministic test execution
-  - timeout handling for long-running tests
-- Artifacts
-  - test logs
-  - pass/fail traces
-  - runtime errors
-
-##### 5. Data Validation
-
-- verify repo integrity
-- ensure tests reproduce failure
-- validate task schema
-
----
-
-- confirm patch applies cleanly to repo
-- ensure AST parses after patch
-- validate symbolic extraction coverage
-- detect unsupported constructs early
-
-##### 6. Logging & Reproducibility
-
-- artifact storage:
-  - JSON logs for:
-    - patches
-    - slices
-    - constraints
-    - solver outputs
-  - configuration files:
-    - model settings
-    - solver parameters
-    - evaluation configs
-
-##### 7. Database Infrastructure
-
-- vector store (e.g., FAISS / Chroma)
-- embedding pipeline for code retrieval
-
-##### 8. Caching
-
-- cache embeddings
-- cache solver results
-- cache retrieved context
-- prompt caching (avoid repeated LLM calls)
-- patch evaluation caching (same patch → skip recompute)
-- slice caching (unchanged code regions)
-
-##### 9. Orchestration / Pipeline Management
-
-- pipeline controller:
-  - manages stage execution:
-    - retrieval → patch → slice → constraints → solver → feedback
-- state management:
-  - centralized `state` object passed between stages
-- iteration controller:
-  - handles CEGF loop
-  - enforces max iteration budget
-
-### **System Artifacts (Intermediate / Runtime Objects)**
-
-- Define artifacts produced during execution
-- **Output of this section should be:**
-  - A **clear map of runtime state + intermediate objects**
-
----
-
-#### **Intermediate Iteration Artifacts**
-
-- What artifacts are produced at each step/iteration?
-- Examples:
-  - chunked inputs
-  - feature vectors
-  - attention statistics
-  - constraint sets
-  - intermediate predictions
-
----
-
--
-
-#### **Runtime State**
-
-- What state is maintained across steps?
-- Examples:
-  - KV cache
-  - memory buffers
-  - execution traces
-  - feedback signals
-
----
-
--
-
-### **Output Artifacts (What the system produces)**
-
-- Define final outputs used for evaluation or downstream tasks
-- **Output of this section should be:**
-  - A **well-defined output space**
-
----
-
-#### **Primary Outputs**
-
-- What is the main output?
-- Examples:
-  - predictions
-  - generated sequences
-  - decisions
-
----
-
--
-
-#### **Auxiliary Outputs**
-
-- Additional outputs for analysis:
-- Examples:
-  - logs
-  - traces
-  - confidence scores
-  - explanations
-
----
-
--
-
-#### **File-Level Outputs**
-
-##### Files Modified:
-
--
-
-##### Files Added:
-
--
-
-### **Artifact Schema / Serialization Contract**
-
-- Define how artifacts are structured and stored
-- **Output of this section should be:**
-  - A **reproducible artifact specification**
-
----
-
-#### **Object Definitions**
-
-##### **1. [Artifact Name]**
-
-- Fields:
-- Type:
-- Description:
-
-#### **Serialization Format**
-
-- JSON / binary / database schema
-- Key naming conventions
-- Versioning format
-
----
-
--
-
-#### **Versioning Strategy**
-
-- How are artifacts versioned?
-- Examples:
-  - dataset version
-  - model checkpoint version
-  - experiment ID
-
----
-
--
-
-### **Diagrams (System Visualization Layer)**
-
-- Visual representations of the system
-- **Output of this section should be:**
-  - A **visual understanding of system + artifacts**
-
----
-
-#### **System Overview Diagram**
-
-- Bug Report → Context Retrieval → Neural Proposal → Impact Slicing → Constraint Extraction → Symbolic Execution → Counterexample Generation → Feedback Transformation → CEGF Loop
-
-#### **Dataflow Diagram**
-
-- task instance → repo context → patch diff → program slice → SMT constraints → solver result → critique → refined patch
-
-#### **Repair Loop Diagram**
-
-- shows the closed-loop interaction between the LLM and symbolic solver
-
-#### **Artifact Flow Diagram**
-
-- maps which files are consumed and produced at each stage
-
-#### **Failure Mode Diagram**
-
-- shows branching outcomes such as:
-  - patch parse failure
-  - unsupported symbolic construct
-  - solver SAT / UNSAT / UNKNOWN / TIMEOUT
-
-#### **Ablation Diagram**
-
-- full Symbiotic-SWE vs. stripped variants:
-  - neural only
-  - neural + slicing
-  - neural + solver without critique
-  - neural + critique without slicing
-  - full system
-
-### **Benchmarks & Evaluation Artifacts**
-
-- Define the evaluation environment
-- **Output of this section should be:**
-  - A **clear evaluation interface**
-
----
-
-#### **Benchmarks**
-
-- Primary benchmark
-- Subsets (e.g., logic-heavy)
-
----
-
--
-
-#### **Evaluation Outputs**
-
-- What outputs are compared?
-- Examples:
-  - predicted vs ground truth
-  - performance metrics
-  - system traces
-
----
-
--
-
-### **Ablation Grid (Experimental Design Space)**
-
-- Define variations of the system
-- **Output of this section should be:**
-  - A **structured experimental grid**
-
----
-
-#### **Baseline Systems**
-
-- Vanilla SWE-agent
-- Chain-of-Thought-only repair agent
-
-#### **System Variants**
-
-- Neural-only agent
-- Neural + Impact Slicing
-- Neural + Symbolic Verification (no critique injection)
-- Neural + Counterexample Guided Feedback (no slicing)
-- Full Symbiotic-SWE
-
-#### **Constraint Source Variants**
-
-- Assertions only
-- Type hints only
-- Assertions + type hints
-- Assertions + type hints + inferred contracts
-- Assertions + type hints + inferred contracts + optional LLM-generated invariants
-
-#### **Retrieval Variants**
-
-- Semantic retrieval only
-- Semantic retrieval + structural expansion
-
-#### **Termination / Budget Variants**
-
-- max iterations = 1, 2, 3, 5
-- solver timeout thresholds
-
-#### **Critique Variants**
-
-- raw solver output
-- structured critique template
-- structured critique + light LLM rewrite
-
-### Benchmarks #TODO
-
-#### **Primary benchmark**
-
-- SWE-bench or a cleaned / filtered substitute benchmark
-
-#### **Logic-heavy subset**
-
-- arithmetic predicate bugs
-- relational operator bugs
-- assertion-violation bugs
-- multi-conditional reasoning bugs
-- bugs whose fixes primarily modify conditionals rather than large structural rewrites
-- That logic-heavy subset is already central to your proposal and should be explicitly repeated here because it determines which artifact traces you need to save for later analysis.
-
-#### **Benchmark outputs to compare**
-
-- task resolution rate
-- number of repair iterations
-- token consumption
-- wall-clock runtime
-- solver overhead
-- critique quality
-- regression behavior / repeated failure rate
-
-### Runtime / Intermediate Artifacts
-
-#### <b>Intermediate Iteration Artifacts</b>
-
-- `workspace/task.json`
-- `workspace/repo_snapshot/`
-- `workspace/ast_map.pkl`
-- `workspace/call_graph.json`
-- `retrieval/chunks.jsonl`
-- `retrieval/ranked_candidates.json`
-- `retrieval/topk_context.json`
-- `prompts/iteration_k.txt`
-- `patches/iteration_k.diff`
-- `patches/iteration_k_apply_log.txt`
-- `analysis/modified_nodes.json`
-- `analysis/program_slice.json`
-- `analysis/cfg.json`
-- `analysis/dfg.json`
-- `constraints/spec.json`
-- `constraints/constraints.smt2`
-- `constraints/unsupported_nodes.json`
-- `solver/solver_result.json`
-- `solver/model.json`
-- `counterexamples/iteration_k.json`
-- `counterexamples/iteration_k_replay.txt`
-- `feedback/iteration_k.txt`
-- `feedback/iteration_k.json`
-- `history/trajectory.json`
-- `logs/full_trace.json`
-
-### Output Artifacts
-
-#### Files Modified
-
-- repository files patched during candidate repair iterations
-- benchmark task working tree used for patch application and replay
-- configuration files for solver and evaluation settings
-- trajectory / metrics files updated after each iteration
-
-#### Files Added
-
-- `workspace/task.json`
-- `workspace/ast_map.pkl`
-- `workspace/call_graph.json`
-- `retrieval/chunks.jsonl`
-- `retrieval/embeddings.npy`
-- `retrieval/ranked_candidates.json`
-- `retrieval/topk_context.json`
-- `prompts/iteration_k.txt`
-- `llm_outputs/iteration_k.json`
-- `patches/iteration_k.diff`
-- `analysis/modified_nodes.json`
-- `analysis/program_slice.json`
-- `analysis/cfg.json`
-- `analysis/dfg.json`
-- `constraints/spec.json`
-- `constraints/constraints.smt2`
-- `constraints/variables.json`
-- `constraints/unsupported_nodes.json`
-- `solver/solver_result.json`
-- `solver/model.json`
-- `solver/log.txt`
-- `counterexamples/iteration_k.json`
-- `counterexamples/iteration_k_replay.txt`
-- `feedback/iteration_k.txt`
-- `feedback/iteration_k.json`
-- `history/trajectory.json`
-- `metrics/run_summary.json`
-- `logs/full_trace.json`
-
-### Artifact Schema / Serialization Contract
-
-#### **1. Task Object**
-
-- Represents a single benchmark instance (input to the system)
-
-```python
-{
-  "schema_version": "1.0",
-  "task_id": "string",
-  "repo_path": "string",
-  "repo_commit": "string",
-  "bug_report": "string",
-  "failing_tests": [
-    {
-      "name": "string",
-      "input": "any",
-      "expected": "any",
-      "actual": "any",
-      "error": "string"
-    }
-  ],
-  "execution_trace": ["string"],
-  "metadata": {
-    "dataset": "string",
-    "difficulty": "string",
-    "tags": ["string"]
-  }
-}
-```
-
-#### **2. Patch Object**
-
-- Represents an LLM-generated or refined code patch
-
-```python
-{
-  "schema_version": "1.0",
-  "patch_id": "string",
-  "iteration": 0,
-  "raw_text": "string",
-  "diff": "string",
-  "target_files": ["string"],
-  "parse_ok": true,
-  "syntax_ok": true,
-  "apply_ok": true,
-  "errors": ["string"],
-  "metadata": {
-    "model": "string",
-    "prompt_path": "string"
-  }
-}
-```
-
-#### **3. Program Slice**
-
-- Represents the reduced portion of the program used for symbolic reasoning
-
-```python
-{
-  "schema_version": "1.0",
-  "slice_id": "string",
-  "iteration": 0,
-  "target_functions": ["string"],
-  "modified_nodes": [
-    {
-      "type": "string",
-      "lineno": 0,
-      "code": "string"
-    }
-  ],
-  "affected_variables": ["string"],
-  "path_conditions": ["string"],
-  "related_tests": ["string"],
-  "source_files": ["string"],
-  "unsupported_nodes": ["string"]
-}
-```
-
-#### **4. Symbolic Problem Spec**
-
-- Represents the SMT-encodable abstraction of the program slice
-
-```python
-{
-  "schema_version": "1.0",
-  "problem_id": "string",
-  "iteration": 0,
-  "function_name": "string",
-  "variables": {
-    "var_name": "type"
-  },
-  "path_constraints": ["string"],
-  "preconditions": ["string"],
-  "postconditions": ["string"],
-  "invariants": ["string"],
-  "encoding_status": "success | partial | failed",
-  "unsupported_constructs": ["string"]
-}
-```
-
-#### **5. Solver Result**
-
-- Represents the output of symbolic execution / SMT solving
-
-```python
-{
-  "schema_version": "1.0",
-  "solver_id": "string",
-  "iteration": 0,
-  "status": "sat | unsat | unknown | timeout",
-  "model": {
-    "var_name": "value"
-  },
-  "violated_property": "string",
-  "solver_time_ms": 0,
-  "constraints_checked": 0,
-  "error": "string"
-}
-```
-
-#### **6. Counterexample Object**
-
-- Concrete failure instance derived from solver output
-
-```python
-{
-  "schema_version": "1.0",
-  "counterexample_id": "string",
-  "iteration": 0,
-  "inputs": {
-    "var_name": "value"
-  },
-  "violated_property": "string",
-  "observed_failure": "string",
-  "affected_function": "string",
-  "replay_success": true,
-  "trace": ["string"]
-}
-```
-
-#### **7. Critique Object**
-
-- Natural language feedback used for refinement
-
-```python
-{
-  "schema_version": "1.0",
-  "critique_id": "string",
-  "iteration": 0,
-  "short_text": "string",
-  "structured": {
-    "function": "string",
-    "inputs": {
-      "var_name": "value"
-    },
-    "error": "string",
-    "violated_property": "string"
-  },
-  "source": "template | llm",
-  "prompt_ready": true
-}
-```
-
-#### **8. Iteration History / Trajectory**
-
-- Tracks the full repair loop
-
-```python
-{
-  "schema_version": "1.0",
-  "task_id": "string",
-  "iterations": [
-    {
-      "iteration": 0,
-      "prompt_path": "string",
-      "patch_id": "string",
-      "slice_id": "string",
-      "problem_id": "string",
-      "solver_id": "string",
-      "counterexample_id": "string",
-      "critique_id": "string",
-      "solver_status": "sat | unsat | unknown | timeout",
-      "tokens_used": 0,
-      "time_ms": 0
-    }
-  ],
-  "final_status": "success | failure | timeout",
-  "termination_reason": "string",
-  "total_tokens": 0,
-  "total_time_ms": 0
-}
-```
+###### **Low-level Pipeline Steps**
+
+- mention Failure Modes
+- mention Tests
+
+1. Setup version control + experiment tracking
+   1. Initialize git repo
+   2. Add:
+      - .gitignore (exclude artifacts, caches)
+   3. Define commit conventions
+   4. Track:
+      - config versions
+      - schema versions
+2. Choose tooling
+3. Setup logging + Observability
+   1. Run logs
+   2. Error logs
+   3. Solver logs
+   4. Patch logs
+   5. Failure logs for:
+      1. patch apply failure
+      2. AST parse failure
+      3. solver timeout
+      4. unsupported symbolic construct
+4. Setup environment + dependency management
+   1. Create:
+      - pyproject.toml
+   2. Create reproducible environment:
+      - poetry
+      - venv
+5. Setup CI/CD
+6. Define datastructure schemas / dataclasses
+   - `TaskObject`
+   - `RepoIndex`
+7. Add schema validation / smoke validation
+   1. validating config files
+   2. validating task schema
+   3. validating artifact schema round-trips
+8. Define Constants
+9. Initialize repository structure aligned to pipeline stages
+   1. Create top-level directories:
+      - src/ (core logic)
+      - data/
+        - raw/
+        - processed/
+        - benchmarks/
+      - tests/
+      - docs/
+   2. Subdivide src/ into pipeline modules:
+      - pipeline/ (orchestration)
+      - dataset/
+        - main Task Loader & Normalizer module
+        - main Repository Indexer (Static Analysis Layer) module
+      - context_selection/ (NOT RAG)
+        - main Context Selector (Bug Localization Layer) module
+      - patch_generation/
+      - slicing/
+      - symbolic/
+      - feedback/
+      - evaluation/
+10. Write README + developer documentation
+    1. Include:
+       - project overview
+       - pipeline stages
+       - setup instructions
+       - how to run:
+         - single task
+         - benchmark
+         - artifact structure
+    2. Add:
+       - expected outputs
+       - common failure cases
+
+##### \*\*1. Data Processing
+
+###### Key Components / Deliverables
+
+- Task Loader & Normalizer
+- Repository Indexer (Static Analysis Layer)
+
+###### **Low-level Pipeline Steps**
+
+- mention Failure Modes
+- mention Tests
+
+1. Implement Task Loader & Normalizer
+   1. Create a Task Loader Module in `~/dataset/task_loader.py`
+      1. Read benchmark entries from:
+         - SWE-bench Verified subset
+         - optional synthetic HumanEval bug tasks later
+      2. Extract raw fields needed for each task and populate `TaskObject`:
+         - task id
+         - repo identifier
+         - base commit
+         - bug report / problem statement
+         - failing tests
+         - optional patch / oracle fields
+      3. Validate required fields before further processing
+      4. Skip or log malformed tasks
+      5. Filter and select usable tasks
+         1. Restrict to selected repositories if needed:
+            - sympy
+            - pandas
+            - numpy
+            - scikit-learn
+            - matplotlib
+         2. Apply logic-heavy heuristics:
+            - patch modifies conditional logic or comparisons
+            - issue text suggests edge cases / wrong logic / assertions
+         3. Remove tasks with:
+            - dependency changes
+            - import fixes
+            - config changes
+            - large refactors
+         4. Create three task subsets:
+            - smoke tasks
+            - dev tasks
+            - final evaluation tasks
+   2. Create a Task Normalizer module `~/dataset/task_normalizer.py`
+      1. Normalize tasks into canonical internal schema
+         1. Convert benchmark-specific fields into one shared Task object
+         2. Assign stable task_id
+         3. Attach metadata:
+            - dataset source
+            - repo name
+            - logic-heavy label
+            - bug-type label if available
+         4. Preserve raw benchmark fields separately for traceability
+         5. Write normalized task artifacts to disk
+2. Implement Repository Indexer (Static Analysis Layer) in `~/dataset/repo_indexer.py`
+   1. Load bug specification and validation signals
+      1. Persist bug report / issue description
+      2. Persist failing test identifiers
+      3. Persist optional execution trace if available
+      4. Persist optional oracle fields:
+         1. gold patch
+         2. test patch
+      5. constraint specification if available
+      6. Merge these into the canonical task artifact
+   2. Parse and index repository once
+      1. Traverse all Python files in the repository
+      2. Parse each file into an AST
+      3. Extract file-level metadata:
+         1. imports
+         2. source/test role
+         3. top-level symbols
+      4. Extract symbol-level metadata:
+         1. functions
+         2. classes
+         3. line spans
+      5. Build reusable repo indexes:
+         1. filepath -> AST
+         2. symbol table
+         3. import graph
+         4. call graph if available
+      6. Record parse failures without crashing the task
+      7. Cache the index for later stages
+   3. Construct final prepared task artifact
+      1. Merge:
+         1. normalized task metadata
+         2. local repo path
+         3. bug report
+         4. failing tests
+         5. execution trace
+         6. repo index references
+      2. Mark task status:
+         1. valid
+         2. partial
+         3. invalid
+      3. Attach schema version + preprocessing timestamp
+      4. Write one canonical task.json per valid task
+
+##### **2. Context Retrieval**
+
+###### **Key Components / Deliverables**
+
+- Context Selector (Bug Localization Layer)
+- Prompt Builder
+
+###### **Low-level Pipeline Steps**
+
+- mention Failure Modes
+- mention Tests
 
 ## **Experimental Evaluation (Did it work?)**
 
@@ -2950,35 +1786,72 @@ task = {
 
 ---
 
-#### **Dataset**
+#### Benchmarks
 
-- What data is used?
-- Size, distribution, splits
+##### **Primary benchmark**
 
----
+- We evaluate on **SWE-bench Verified**, a curated set of real-world software engineering bug-fixing tasks consisting of human-validated issue descriptions, repository snapshots, and failing tests. This benchmark enables evaluation of end-to-end repair performance in realistic development settings.
+- However, since SWE-bench primarily evaluates correctness via **test-passing behavior**, it does not fully capture **logical correctness beyond test coverage**.
+- To address this limitation, we additionally construct a **small synthetic benchmark of logic bugs derived from HumanEval problems**, where ground-truth behavior is known and logical errors can be precisely characterized. This allows us to directly evaluate whether counterexample-guided feedback improves **semantic correctness**, not just test satisfaction.
 
-##### **Primary Dataset**
+###### SWE-bench Verified
 
-- SWE-bench (or filtered/cleaned subset)
-- Each task includes:
-  - repository snapshot
-  - bug report
-  - failing tests
+- In addition to overall performance, we focus on a **logic-heavy subset of tasks**, where symbolic reasoning is expected to provide the greatest benefit.
+- This subset is central to our evaluation, as it isolates scenarios where **execution-based feedback is insufficient** and **constraint-based reasoning is required**.
+- **40 tasks total**
+  - 15-25 logic-heavy tasks
+  - 3-5 task for smoke testing
+  - Keep tasks with
+    - arithmetic predicate bugs
+    - relational operator bugs
+    - assertion-violation bugs
+    - multi-conditional reasoning bugs
+    - bugs whose fixes primarily modify **logical conditions or expressions**, rather than requiring large structural or architectural changes
+    - patch modifies:
+      - `if`, `elif`, `else`
+      - boolean expressions
+      - comparison operators (`<, >, ==, !=`)
+      - arithmetic logic
+    - bug involves:
+      - edge cases
+      - incorrect conditions
+      - wrong return logic
+  - Remove tasks where
+    - patch involves:
+      - dependency changes
+      - import fixes
+      - file I/O
+      - config changes
+      - large refactors (> ~20–30 lines changed)
+    - bug description mentions:
+      - “missing file”
+      - “API change”
+      - “version mismatch”
+  - Repos
+    - `sympy` → symbolic math logic (BEST FIT)
+    - `pandas` → condition handling, edge cases
+    - `numpy` → numerical edge cases
+    - `scikit-learn` → validation logic
+    - `matplotlib` → conditional rendering logic
 
-##### **Logic-Heavy Subset (Core Evaluation Focus)**
+###### HumanEval Synthetic Benchmark
 
-- Arithmetic predicate bugs
-- Conditional logic errors
-- Assertion violations
-- Edge-case handling bugs (empty inputs, boundary values)
-- Multi-step reasoning bugs (nested conditionals)
+##### **Benchmark outputs to compare**
 
-##### **Dataset Filtering Strategy**
+We evaluate both **end-to-end performance** and **internal system behavior** using the following metrics:
 
-- Filter tasks where:
-  - fixes primarily modify conditionals or expressions
-  - failure traces involve incorrect logical reasoning
-- Optional: manually annotate ~20–50 tasks to validate subset quality
+- **Task Resolution Rate**
+  - Percentage of tasks successfully fixed
+- **Repair Efficiency**
+  - number of repair iterations
+  - total token consumption
+  - wall-clock runtime
+- **Solver Overhead**
+  - fraction of total runtime spent in symbolic execution and constraint solving
+- **Feedback Quality**
+  - critique usefulness and specificity (via LLM-as-judge and qualitative analysis)
+- **Search Behavior** - regression rate (patches that pass tests but remain logically incorrect) - repeated failure rate across iterations
+  These metrics allow us to evaluate not only whether the system succeeds, but **how it arrives at a solution**.
 
 #### **Baselines**
 
@@ -2989,28 +1862,35 @@ task = {
 
 ##### **Primary Baseline**
 
-- Vanilla SWE-agent (same model, same prompt budget)
+- **Vanilla SWE-agent**
+  - Uses the same LLM (GPT-4o) and retrieval setup
+  - Relies solely on **execution-based feedback (tests)**
+  - Serves as the primary point of comparison for real-world repair performance
 
 ##### **Additional Baselines**
 
 - **Chain-of-Thought Agent**
-  - reasoning-only, no verification
+  - Uses structured reasoning in natural language
+  - Does not incorporate external verification or symbolic feedback
 - **Execution-Only Agent**
-  - test feedback, no symbolic reasoning
+  - Iteratively refines patches using test outcomes only
+  - Lacks constraint-based validation
 - **Ablation Variants**
-  - Neural + slicing (no solver)
-  - Neural + solver (no counterexample feedback)
-  - Neural + CEGF (no slicing)
+  - **Neural + Slicing (no solver):** evaluates impact of structural localization without symbolic reasoning
+  - **Neural + Solver (no counterexample feedback):** evaluates whether verification alone improves performance without feedback integration
+  - **Neural + CEGF (no slicing):** evaluates the role of precise localization in enabling effective symbolic reasoning
 
 ##### **Fairness Constraints**
 
-- Same:
+- To ensure a fair comparison, all methods share the same:
   - LLM model (GPT-4o)
-  - max tokens
-  - max iterations
-  - retrieval setup
-- Only difference:
-  - presence/absence of symbolic validation + CEGF
+  - maximum token budget
+  - maximum number of iterations
+  - retrieval and context construction setup
+- The **only difference** between methods is the presence or absence of:
+  - symbolic constraint extraction
+  - solver-based verification
+  - counterexample-guided feedback (CEGF)
 
 #### **Metrics**
 
@@ -3209,12 +2089,50 @@ task = {
     - histogram of iterations-to-success
     - solver outcome distribution
 
-#### **Ablation Studies**
+#### **Ablation Grid (Experimental Design Space)**
 
-- What components are removed or modified?
-- Why?
+- Define variations of the system
+- **Output of this section should be:**
+  - A **structured experimental grid**
 
 ---
+
+##### **Baseline Systems**
+
+- Vanilla SWE-agent
+- Chain-of-Thought-only repair agent
+
+##### **System Variants**
+
+- Neural-only agent
+- Neural + Impact Slicing
+- Neural + Symbolic Verification (no critique injection)
+- Neural + Counterexample Guided Feedback (no slicing)
+- Full Symbiotic-SWE
+
+##### **Constraint Source Variants**
+
+- Assertions only
+- Type hints only
+- Assertions + type hints
+- Assertions + type hints + inferred contracts
+- Assertions + type hints + inferred contracts + optional LLM-generated invariants
+
+##### **Retrieval Variants**
+
+- Semantic retrieval only
+- Semantic retrieval + structural expansion
+
+##### **Termination / Budget Variants**
+
+- max iterations = 1, 2, 3, 5
+- solver timeout thresholds
+
+##### **Critique Variants**
+
+- raw solver output
+- structured critique template
+- structured critique + light LLM rewrite
 
 - We perform ablations to isolate the contribution of each component in the system.
 
@@ -3255,6 +2173,46 @@ task = {
      - stability of convergence
 4. Effect Size (Optional but Strong)
    - Measure magnitude of improvement: effect_size = (mean_A - mean_B) / std_dev
+
+#### **Diagrams (System Visualization Layer)**
+
+- Visual representations of the system
+- **Output of this section should be:**
+  - A **visual understanding of system + artifacts**
+
+---
+
+##### **System Overview Diagram**
+
+- Bug Report → Context Retrieval → Neural Proposal → Impact Slicing → Constraint Extraction → Symbolic Execution → Counterexample Generation → Feedback Transformation → CEGF Loop
+
+##### **Dataflow Diagram**
+
+- task instance → repo context → patch diff → program slice → SMT constraints → solver result → critique → refined patch
+
+##### **Repair Loop Diagram**
+
+- shows the closed-loop interaction between the LLM and symbolic solver
+
+##### **Artifact Flow Diagram**
+
+- maps which files are consumed and produced at each stage
+
+##### **Failure Mode Diagram**
+
+- shows branching outcomes such as:
+  - patch parse failure
+  - unsupported symbolic construct
+  - solver SAT / UNSAT / UNKNOWN / TIMEOUT
+
+##### **Ablation Diagram**
+
+- full Symbiotic-SWE vs. stripped variants:
+  - neural only
+  - neural + slicing
+  - neural + solver without critique
+  - neural + critique without slicing
+  - full system
 
 ### **Threats to Validity (How could this be wrong?)**
 

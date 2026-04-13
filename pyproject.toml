@@ -12,6 +12,7 @@ packages = [
 [tool.poetry.scripts]
 symbiotic-swe = "symbiotic_swe.cli:main"
 symbiotic-swe-task = "symbiotic_swe.cli:main_task"
+symbiotic-swe-smoke = "symbiotic_swe.cli:main_smoke"
 symbiotic-swe-benchmark = "symbiotic_swe.cli:main_benchmark"
 symbiotic-swe-ablation = "symbiotic_swe.cli:main_ablation"
 

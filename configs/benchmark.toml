@@ -1,5 +1,0 @@
-mode = "benchmark"
-extends = "base.toml"
-
-[input]
-benchmark_source = "data/benchmarks"

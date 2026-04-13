@@ -1,0 +1,25 @@
+{
+  "schema_version": "0.1.0",
+  "task_id": "sympy__sympy-17139",
+  "repo": "sympy/sympy",
+  "repo_commit": "deadbeef",
+  "repo_path": "artifacts/workspaces/task-demo/sympy__sympy-17139/repo",
+  "bug_description": "Incorrect edge-case handling in a predicate branch.",
+  "failing_tests": [
+    {
+      "name": "sympy/tests/test_logic.py::test_bug",
+      "error": "AssertionError"
+    }
+  ],
+  "execution_trace": [],
+  "oracle": {
+    "type": "tests",
+    "spec": ["sympy/tests/test_logic.py::test_bug"]
+  },
+  "metadata": {
+    "dataset": "SWE-bench Verified",
+    "difficulty": "15 min - 1 hour",
+    "tags": ["logic-heavy"],
+    "logic_heavy": true
+  }
+}
