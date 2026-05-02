@@ -1,0 +1,17 @@
+extends:
+  - configs/global.yaml
+  - configs/datasets/swe_bench_verified.yaml
+  - configs/experiments/baseline.yaml
+
+run:
+  mode: benchmark
+  agent: gpt4o
+  seed: 0
+
+patch_generation:
+  max_candidates: 1
+  temperature: 0.0
+
+evaluation:
+  run_fail_to_pass: true
+  run_pass_to_pass: true

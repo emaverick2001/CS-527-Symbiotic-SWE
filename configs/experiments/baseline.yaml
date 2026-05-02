@@ -1,0 +1,16 @@
+experiment:
+  name: baseline
+  description: Agentic repair without symbolic solver feedback.
+  seed: 0
+  max_iterations: 1
+
+pipeline:
+  stages:
+    - retrieval
+    - patch_generation
+    - evaluation
+  symbolic_feedback_enabled: false
+
+artifacts:
+  run_id_template: "{date}_{agent}_{experiment}_{solver}_{seed}"
+  root: artifacts/runs

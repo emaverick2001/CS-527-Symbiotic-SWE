@@ -1,0 +1,15 @@
+extends:
+  - configs/global.yaml
+  - configs/datasets/swe_bench_verified.yaml
+
+evaluation:
+  mode: existing_run
+  run_fail_to_pass: true
+  run_pass_to_pass: true
+  timeout_seconds: 900
+  results_file: evaluation_results.jsonl
+  metrics_file: metrics.json
+
+reporting:
+  summary_file: summary.md
+  aggregate_metrics_dir: artifacts/metrics

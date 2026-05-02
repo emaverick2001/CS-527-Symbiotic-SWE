@@ -1,0 +1,25 @@
+project:
+  name: cs-527-symbiotic-swe
+  description: Integrating symbolic solvers into the agentic debugging loop.
+  default_seed: 0
+
+paths:
+  data_root: data
+  artifacts_root: artifacts
+  runs_root: artifacts/runs
+  workspaces_root: artifacts/workspaces
+  cache_root: artifacts/cache
+  logs_root: artifacts/logs
+
+defaults:
+  dataset_config: configs/datasets/swe_bench_verified.yaml
+  solver_config: configs/solvers/crosshair_z3.yaml
+  experiment_config: configs/experiments/symbolic_feedback.yaml
+  agent: gpt4o
+  solver: crosshair-z3
+  run_id_template: "{date}_{agent}_{experiment}_{solver}_{seed}"
+
+logging:
+  level: INFO
+  stage_timings_file: stage_timings.csv
+  errors_file: errors.log

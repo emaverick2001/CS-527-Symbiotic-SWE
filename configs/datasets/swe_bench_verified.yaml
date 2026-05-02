@@ -1,0 +1,21 @@
+dataset:
+  name: swe_bench_verified
+  display_name: SWE-bench Verified
+  source: princeton-nlp/SWE-bench_Verified
+  split: test
+  raw_dir: data/benchmarks/swe_bench/verified
+  processed_manifest: data/processed/swe_bench/manifests/verified_tasks.jsonl
+  smoke_split: data/processed/swe_bench/splits/smoke_tasks.jsonl
+  evaluation_split: data/processed/swe_bench/splits/core_tasks.jsonl
+
+filters:
+  preferred_repositories:
+    - sympy/sympy
+    - pandas-dev/pandas
+    - numpy/numpy
+    - scikit-learn/scikit-learn
+    - matplotlib/matplotlib
+  max_changed_files: 3
+  max_changed_lines: 80
+  exclude_dependency_changes: true
+  exclude_large_refactors: true

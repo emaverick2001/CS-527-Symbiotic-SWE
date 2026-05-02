@@ -4,7 +4,7 @@ import argparse
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 PRESET_DATASETS = {
     'verified': 'princeton-nlp/SWE-bench_Verified',
@@ -62,7 +62,7 @@ def default_output_dir(root: Path, preset: str) -> Path:
 
 def resolve_output_dir(args: argparse.Namespace) -> Path:
     if args.output_dir is not None:
-        return args.output_dir.resolve()
+        return cast(Path, args.output_dir).resolve()
     return default_output_dir(project_root(), args.preset)
 
 

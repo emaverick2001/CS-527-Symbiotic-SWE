@@ -1,0 +1,23 @@
+extends:
+  - configs/global.yaml
+  - configs/datasets/swe_bench_verified.yaml
+
+experiment:
+  name: smoke
+  seed: 0
+  max_iterations: 1
+
+run:
+  mode: task
+  agent: scaffold
+  solver: none
+  task_ids:
+    - demo-task
+
+pipeline:
+  stages:
+    - retrieval
+    - patch_generation
+    - slicing
+    - symbolic_reasoning
+    - evaluation

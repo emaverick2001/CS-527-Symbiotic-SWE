@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Load raw SWE-bench Verified tasks, rank logic-heavy candidates, and export raw subsets."""
+
+from __future__ import annotations
 
 import argparse
 import ast
@@ -10,6 +10,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 if __package__ in {None, ''}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 

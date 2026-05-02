@@ -1,0 +1,12 @@
+solver:
+  name: crosshair-z3
+  backend: crosshair
+  smt_backend: z3
+  timeout_seconds: 30
+  max_counterexamples: 3
+  unsupported_construct_policy: warn
+
+outputs:
+  query_log: solver_queries.jsonl
+  result_log: solver_results.jsonl
+  native_output_dir: artifacts/solver_outputs/crosshair

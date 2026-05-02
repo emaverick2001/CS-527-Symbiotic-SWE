@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Visualize one SWE-bench task from a JSON or JSONL file.
 
@@ -17,6 +15,8 @@ What it prints:
 Use this script when you want to inspect the structure of one task before
 writing parsing code or updating schema/dataclass definitions.
 """
+
+from __future__ import annotations
 
 import argparse
 import json

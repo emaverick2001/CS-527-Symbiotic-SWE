@@ -1,0 +1,22 @@
+experiment:
+  name: symbolic-feedback
+  description: Agentic repair with slicing, symbolic checks, and counterexample feedback.
+  seed: 0
+  max_iterations: 2
+
+pipeline:
+  stages:
+    - retrieval
+    - patch_generation
+    - slicing
+    - symbolic_reasoning
+    - feedback_transformation
+    - evaluation
+  symbolic_feedback_enabled: true
+
+solver:
+  config: configs/solvers/crosshair_z3.yaml
+
+artifacts:
+  run_id_template: "{date}_{agent}_{experiment}_{solver}_{seed}"
+  root: artifacts/runs

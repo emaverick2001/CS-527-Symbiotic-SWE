@@ -165,12 +165,34 @@ artifacts/runs/*
 !artifacts/runs/.gitkeep
 artifacts/logs/*
 !artifacts/logs/.gitkeep
+!artifacts/logs/**/
+!artifacts/logs/**/.gitkeep
 artifacts/cache/*
 !artifacts/cache/.gitkeep
+!artifacts/cache/**/
+!artifacts/cache/**/.gitkeep
 artifacts/workspaces/*
 !artifacts/workspaces/.gitkeep
+artifacts/checkpoints/**
+!artifacts/checkpoints/**/
+!artifacts/checkpoints/**/.gitkeep
+artifacts/patches/**
+!artifacts/patches/**/
+!artifacts/patches/**/.gitkeep
+artifacts/solver_outputs/**
+!artifacts/solver_outputs/**/
+!artifacts/solver_outputs/**/.gitkeep
+artifacts/metrics/**
+!artifacts/metrics/**/
+!artifacts/metrics/**/.gitkeep
 
 # Downloaded benchmark data
 data/benchmarks/swe_bench/**/hf/
 data/benchmarks/swe_bench/**/jsonl/
 data/benchmarks/swe_bench/**/metadata.json
+data/raw/**
+!data/raw/**/
+!data/raw/**/.gitkeep
+data/processed/**
+!data/processed/**/
+!data/processed/**/.gitkeep
