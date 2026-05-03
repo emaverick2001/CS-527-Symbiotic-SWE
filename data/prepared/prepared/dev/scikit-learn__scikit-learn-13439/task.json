@@ -1,0 +1,38 @@
+{
+  "schema_version": "0.1.0",
+  "task_id": "scikit-learn__scikit-learn-13439",
+  "repo": "scikit-learn/scikit-learn",
+  "repo_commit": "a62775e99f2a5ea3d51db7160fad783f6cd8a4c5",
+  "repo_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/workspaces/scikit-learn__scikit-learn-13439/repo",
+  "bug_description": "Pipeline should implement __len__\n#### Description\r\n\r\nWith the new indexing support `pipe[:len(pipe)]` raises an error.\r\n\r\n#### Steps/Code to Reproduce\r\n\r\n```python\r\nfrom sklearn import svm\r\nfrom sklearn.datasets import samples_generator\r\nfrom sklearn.feature_selection import SelectKBest\r\nfrom sklearn.feature_selection import f_regression\r\nfrom sklearn.pipeline import Pipeline\r\n\r\n# generate some data to play with\r\nX, y = samples_generator.make_classification(\r\n    n_informative=5, n_redundant=0, random_state=42)\r\n\r\nanova_filter = SelectKBest(f_regression, k=5)\r\nclf = svm.SVC(kernel='linear')\r\npipe = Pipeline([('anova', anova_filter), ('svc', clf)])\r\n\r\nlen(pipe)\r\n```\r\n\r\n#### Versions\r\n\r\n```\r\nSystem:\r\n    python: 3.6.7 | packaged by conda-forge | (default, Feb 19 2019, 18:37:23)  [GCC 4.2.1 Compatible Clang 4.0.1 (tags/RELEASE_401/final)]\r\nexecutable: /Users/krisz/.conda/envs/arrow36/bin/python\r\n   machine: Darwin-18.2.0-x86_64-i386-64bit\r\n\r\nBLAS:\r\n    macros: HAVE_CBLAS=None\r\n  lib_dirs: /Users/krisz/.conda/envs/arrow36/lib\r\ncblas_libs: openblas, openblas\r\n\r\nPython deps:\r\n       pip: 19.0.3\r\nsetuptools: 40.8.0\r\n   sklearn: 0.21.dev0\r\n     numpy: 1.16.2\r\n     scipy: 1.2.1\r\n    Cython: 0.29.6\r\n    pandas: 0.24.1\r\n```\n",
+  "failing_tests": [
+    "sklearn/tests/test_pipeline.py::test_make_pipeline_memory"
+  ],
+  "execution_trace": [],
+  "oracle": {
+    "type": "ground_truth",
+    "spec": {
+      "gold_patch": "diff --git a/sklearn/pipeline.py b/sklearn/pipeline.py\n--- a/sklearn/pipeline.py\n+++ b/sklearn/pipeline.py\n@@ -199,6 +199,12 @@ def _iter(self, with_final=True):\n             if trans is not None and trans != 'passthrough':\n                 yield idx, name, trans\n \n+    def __len__(self):\n+        \"\"\"\n+        Returns the length of the Pipeline\n+        \"\"\"\n+        return len(self.steps)\n+\n     def __getitem__(self, ind):\n         \"\"\"Returns a sub-pipeline or a single esimtator in the pipeline\n \n",
+      "test_patch": "diff --git a/sklearn/tests/test_pipeline.py b/sklearn/tests/test_pipeline.py\n--- a/sklearn/tests/test_pipeline.py\n+++ b/sklearn/tests/test_pipeline.py\n@@ -1069,5 +1069,6 @@ def test_make_pipeline_memory():\n     assert pipeline.memory is memory\n     pipeline = make_pipeline(DummyTransf(), SVC())\n     assert pipeline.memory is None\n+    assert len(pipeline) == 2\n \n     shutil.rmtree(cachedir)\n"
+    }
+  },
+  "metadata": {
+    "dataset": "SWE-bench Verified",
+    "difficulty": "<15 min fix",
+    "tags": [
+      "logic-heavy",
+      "arithmetic_predicate_bug"
+    ],
+    "logic_heavy": true,
+    "bug_type": "arithmetic_predicate_bug",
+    "repo_name": "scikit-learn",
+    "status": "valid",
+    "subset": "dev",
+    "preprocessing_timestamp": "2026-05-01T16:10:31.451822+00:00",
+    "bug_report_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/dev/scikit-learn__scikit-learn-13439/bug_report.txt",
+    "failing_tests_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/dev/scikit-learn__scikit-learn-13439/failing_tests.json",
+    "oracle_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/dev/scikit-learn__scikit-learn-13439/oracle.json",
+    "repo_index_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/.cache/c3ee68815d42123d.json",
+    "raw_fields_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/dev/scikit-learn__scikit-learn-13439/raw_fields.json"
+  }
+}

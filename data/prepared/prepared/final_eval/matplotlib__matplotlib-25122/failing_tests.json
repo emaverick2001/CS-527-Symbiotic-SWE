@@ -1,0 +1,14 @@
+[
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[Fs4-twosided-complex]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[Fs4-twosided-real]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[Fs4-onesided-complex]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[Fs4-default-complex]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[Fs4-default-real]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[FsAll-default-complex]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[FsAll-default-real]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[FsAll-twosided-complex]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[FsAll-twosided-real]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[FsAll-onesided-complex]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[FsAll-onesided-real]",
+  "lib/matplotlib/tests/test_mlab.py::TestSpectral::test_psd_window_flattop[Fs4-onesided-real]"
+]

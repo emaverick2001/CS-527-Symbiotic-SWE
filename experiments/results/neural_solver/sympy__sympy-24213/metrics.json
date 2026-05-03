@@ -1,0 +1,121 @@
+{
+  "task_id": "sympy__sympy-24213",
+  "run_id": "1e815ad7",
+  "condition": "neural_solver",
+  "success": false,
+  "termination_reason": "solver_sat_no_feedback",
+  "total_iterations": 1,
+  "total_prompt_tokens": 13444,
+  "total_completion_tokens": 455,
+  "total_duration_ms": 4762,
+  "solver_duration_ms": 1,
+  "solver_outcomes": {
+    "sat": 1
+  },
+  "patch_apply_failures": 0,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "e7026503",
+        "task_id": "sympy__sympy-24213",
+        "iteration": 0,
+        "raw_text": "Looking at the bug report, the issue is that `_collect_factor_and_dimension` doesn't detect that `a1*t1` (acceleration * time) is dimensionally equivalent to `v1` (velocity) when checking addition compatibility.\n\nThe problem is in the `Add` case of `_collect_factor_and_dimension` in `sympy/physics/units/unitsystem.py`. It directly compares dimensions with `!=`, but it should use the dimension system's equivalence checking instead.\n\nLet me trace through the issue:\n1. `a1*t1` has dimension `acceleration*time` = `(length/time²)*time` = `length/time` = `velocity`\n2. `v1` has dimension `velocity`\n3. But the comparison `dim != addend_dim` fails because the dimension objects aren't identical, even though they're equivalent\n\nThe fix is to use `self.get_dimension_system().equivalent_dims()` to check if dimensions are equivalent rather than direct equality.\n\n```diff\n--- a/sympy/physics/units/unitsystem.py\n+++ b/sympy/physics/units/unitsystem.py\n@@ -176,10 +176,11 @@ class UnitSystem(_QuantityMapper):\n         elif isinstance(expr, Add):\n             factor, dim = self._collect_factor_and_dimension(expr.args[0])\n             for addend in expr.args[1:]:\n                 addend_factor, addend_dim = \\\n                     self._collect_factor_and_dimension(addend)\n-                if dim != addend_dim:\n+                if not self.get_dimension_system().equivalent_dims(dim, addend_dim):\n                     raise ValueError(\n                         'Dimension of \"{}\" is {}, '\n                         'but it should be {}'.format(\n                             addend, addend_dim, dim))\n                 factor += addend_factor\n```",
+        "diff": "--- a/sympy/physics/units/unitsystem.py\n+++ b/sympy/physics/units/unitsystem.py\n@@ -176,11 +176,11 @@ class UnitSystem(_QuantityMapper):\n         elif isinstance(expr, Add):\n             factor, dim = self._collect_factor_and_dimension(expr.args[0])\n             for addend in expr.args[1:]:\n                 addend_factor, addend_dim = \\\n                     self._collect_factor_and_dimension(addend)\n-                if dim != addend_dim:\n+                if not self.get_dimension_system().equivalent_dims(dim, addend_dim):\n                     raise ValueError(\n                         'Dimension of \"{}\" is {}, '\n                         'but it should be {}'.format(\n                             addend, addend_dim, dim))\n                 factor += addend_factor\n",
+        "target_files": [
+          "sympy/physics/units/unitsystem.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 13444,
+        "completion_tokens": 455
+      },
+      "program_slice": {
+        "schema_version": "0.1.0",
+        "slice_id": "c643ce0e",
+        "task_id": "sympy__sympy-24213",
+        "iteration": 0,
+        "target_functions": [
+          "_collect_factor_and_dimension"
+        ],
+        "modified_nodes": [
+          "sympy/physics/units/unitsystem.py::_collect_factor_and_dimension"
+        ],
+        "affected_variables": [
+          "addend",
+          "addend_dim",
+          "addend_factor",
+          "arg",
+          "arg_dim",
+          "arg_factor",
+          "count",
+          "d",
+          "dim",
+          "dimension",
+          "dims",
+          "exp_dim",
+          "exp_factor",
+          "expr",
+          "f",
+          "factor",
+          "fds",
+          "idim",
+          "ifactor",
+          "independent",
+          "self"
+        ],
+        "path_conditions": [
+          "isinstance(expr, Quantity)",
+          "isinstance(expr, Mul)",
+          "isinstance(expr, Pow)",
+          "self.get_dimension_system().is_dimensionless(exp_dim)",
+          "isinstance(expr, Add)",
+          "isinstance(expr, Derivative)",
+          "not self.get_dimension_system().equivalent_dims(dim, addend_dim)",
+          "isinstance(expr, Function)",
+          "isinstance(expr, Dimension)"
+        ],
+        "related_tests": [
+          "sympy/physics/units/unitsystem.py"
+        ],
+        "source_snippets": {
+          "sympy/physics/units/unitsystem.py::_collect_factor_and_dimension": "def _collect_factor_and_dimension(self, expr):\n    \"\"\"\n    Return tuple with scale factor expression and dimension expression.\n    \"\"\"\n    from sympy.physics.units import Quantity\n    if isinstance(expr, Quantity):\n        return expr.scale_factor, expr.dimension\n    elif isinstance(expr, Mul):\n        factor = 1\n        dimension = Dimension(1)\n        for arg in expr.args:\n            arg_factor, arg_dim = self._collect_factor_and_dimension(arg)\n            factor *= arg_factor\n            dimension *= arg_dim\n        return factor, dimension\n    elif isinstance(expr, Pow):\n        factor, dim = self._collect_factor_and_dimension(expr.base)\n        exp_factor, exp_dim = self._collect_factor_and_dimension(expr.exp)\n        if self.get_dimension_system().is_dimensionless(exp_dim):\n            exp_dim = 1\n        return factor ** exp_factor, dim ** (exp_factor * exp_dim)\n    elif isinstance(expr, Add):\n        factor, dim = self._collect_factor_and_dimension(expr.args[0])\n        for addend in expr.args[1:]:\n            addend_factor, addend_dim = \\\n                self._collect_factor_and_dimension(addend)\n            if not self.get_dimension_system().equivalent_dims(dim, addend_dim):\n                raise ValueError(\n                    'Dimension of \"{}\" is {}, '\n                    'but it should be {}'.format(\n                        addend, addend_dim, dim))\n            factor += addend_factor\n        return factor, dim\n    elif isinstance(expr, Derivative):\n        factor, dim = self._collect_factor_and_dimension(expr.args[0])\n        for independent, count in expr.variable_count:\n            ifactor, idim = self._collect_factor_and_dimension(independent)\n            factor /= ifactor**count\n            dim /= idim**count\n        return factor, dim\n    elif isinstance(expr, Function):\n        fds = [self._collect_factor_and_dimension(arg) for arg in expr.args]\n        dims = [Dimension(1) if self.get_dimension_system().is_dimensionless(d[1]) else d[1] for d in fds]\n        return (expr.func(*(f[0] for f in fds)), *dims)\n    elif isinstance(expr, Dimension):\n        return S.One, expr\n    else:\n        return expr, Dimension(1)"
+        }
+      },
+      "solver_result": {
+        "schema_version": "0.1.0",
+        "solver_result_id": "9ef3a969",
+        "task_id": "sympy__sympy-24213",
+        "iteration": 0,
+        "status": "sat",
+        "model": {
+          "d": []
+        },
+        "violated_property": "IndexError when d is empty",
+        "solver_time_ms": 1,
+        "error": null
+      },
+      "counterexample": {
+        "schema_version": "0.1.0",
+        "counterexample_id": "028ab15f",
+        "task_id": "sympy__sympy-24213",
+        "iteration": 0,
+        "inputs": {
+          "d": []
+        },
+        "violated_condition": "IndexError when d is empty",
+        "observed_failure": "IndexError when d is empty",
+        "affected_function": "_collect_factor_and_dimension",
+        "replay_ok": true
+      },
+      "critique": null,
+      "duration_ms": 4762
+    }
+  ]
+}

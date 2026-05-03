@@ -1,0 +1,44 @@
+{
+  "task_id": "sympy__sympy-24213",
+  "run_id": "cb80ee5f",
+  "condition": "neural_only",
+  "success": true,
+  "termination_reason": "neural_only_patch_applied",
+  "total_iterations": 1,
+  "total_prompt_tokens": 13444,
+  "total_completion_tokens": 1492,
+  "total_duration_ms": 10777,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 0,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "8c495318",
+        "task_id": "sympy__sympy-24213",
+        "iteration": 0,
+        "raw_text": "Looking at this bug, I need to understand what's happening:\n\n1. The code creates three quantities: `v1` (velocity), `a1` (acceleration), and `t1` (time)\n2. It tries to compute `a1*t1 + v1`, which should work because `acceleration * time = velocity`\n3. The error occurs in `_collect_factor_and_dimension` when it checks that dimensions match in an addition\n\nThe problem is in the `Add` case of `_collect_factor_and_dimension` in `sympy/physics/units/unitsystem.py`. When comparing dimensions, it's doing a direct equality check (`dim != addend_dim`), but it should check if the dimensions are **equivalent** (i.e., they represent the same physical quantity even if expressed differently).\n\nLooking at the code, the dimension system has methods to check equivalence. The issue is that `a1*t1` produces `Dimension(acceleration*time)` while `v1` has `Dimension(velocity)`, and even though these are mathematically equivalent, the direct `!=` comparison fails.\n\nThe fix should use the dimension system's equivalence checking. Looking at the `_QuantityMapper` and `Dimension` classes, there should be a way to check if two dimensions are equivalent.\n\nLet me examine the `_collect_factor_and_dimension` method more carefully. The key is in the `Add` case where it compares `dim != addend_dim`. We need to check if dimensions are equivalent rather than strictly equal.\n\nLooking at the dimension system, we likely need to check equivalence through the dimension system's knowledge of how dimensions relate to each other. The solution is to use dimension simplification or checking if one can be reduced to the other.\n\nThe fix is to compare the simplified/canonical forms of dimensions, or use the dimension system to check equivalence. Since the dimensions might be expressed as products that are equivalent, we should normalize them.\n\n```diff\n--- a/sympy/physics/units/unitsystem.py\n+++ b/sympy/physics/units/unitsystem.py\n@@ -163,10 +163,19 @@ class UnitSystem(_QuantityMapper):\n         elif isinstance(expr, Add):\n             factor, dim = self._collect_factor_and_dimension(expr.args[0])\n             for addend in expr.args[1:]:\n                 addend_factor, addend_dim = \\\n                     self._collect_factor_and_dimension(addend)\n-                if dim != addend_dim:\n+                # Check if dimensions are equivalent by comparing their\n+                # representation in the dimension system\n+                dim_simplified = self.get_dimension_system().simplify_dimensions(dim) if hasattr(self.get_dimension_system(), 'simplify_dimensions') else dim\n+                addend_dim_simplified = self.get_dimension_system().simplify_dimensions(addend_dim) if hasattr(self.get_dimension_system(), 'simplify_dimensions') else addend_dim\n+                \n+                # If dimensions are not equal, check if they're equivalent via the quantity mapper\n+                if dim != addend_dim and dim_simplified != addend_dim_simplified:\n                     raise ValueError(\n                         'Dimension of \"{}\" is {}, '\n                         'but it should be {}'.format(\n                             addend, addend_dim, dim))\n                 factor += addend_factor\n             return factor, dim\n```\n\nActually, let me reconsider. Looking more carefully at the dimension system, the proper way to check equivalence is likely through the `Dimension` class itself or by using `get_dimensional_expr`. Let me check what methods are available.\n\nThe key insight is that we need to reduce/simplify dimensions to a canonical form before comparing. The dimension system should have a way to do this:\n\n```diff\n--- a/sympy/physics/units/unitsystem.py\n+++ b/sympy/physics/units/unitsystem.py\n@@ -163,9 +163,13 @@ class UnitSystem(_QuantityMapper):\n         elif isinstance(expr, Add):\n             factor, dim = self._collect_factor_and_dimension(expr.args[0])\n             for addend in expr.args[1:]:\n                 addend_factor, addend_dim = \\\n                     self._collect_factor_and_dimension(addend)\n-                if dim != addend_dim:\n+                # Check dimension equivalence by comparing their simplified forms\n+                # Two dimensions are equivalent if they simplify to the same thing\n+                dims_eq = (dim == addend_dim) or \\\n+                          (self.get_dimension_system()._get_dimension_properties(dim) == \n+                           self.get_dimension_system()._get_dimension_properties(addend_dim))\n+                if not dims_eq:\n                     raise ValueError(\n                         'Dimension of \"{}\" is {}, '\n                         'but it should be {}'.format(\n                             addend, addend_dim, dim))\n                 factor += addend_factor\n             return factor, dim\n```\n\nActually, the simplest and most robust solution is to check if the dimensions are equivalent by testing if their ratio is dimensionless:\n\n```diff\n--- a/sympy/physics/units/unitsystem.py\n+++ b/sympy/physics/units/unitsystem.py\n@@ -163,10 +163,12 @@ class UnitSystem(_QuantityMapper):\n         elif isinstance(expr, Add):\n             factor, dim = self._collect_factor_and_dimension(expr.args[0])\n             for addend in expr.args[1:]:\n                 addend_factor, addend_dim = \\\n                     self._collect_factor_and_dimension(addend)\n-                if dim != addend_dim:\n+                # Check if dimensions are equivalent (same physical quantity)\n+                # by checking if their ratio is dimensionless\n+                if dim != addend_dim and not self.get_dimension_system().is_dimensionless(dim / addend_dim):\n                     raise ValueError(\n                         'Dimension of \"{}\" is {}, '\n                         'but it should be {}'.format(\n                             addend, addend_dim, dim))\n                 factor += addend_factor\n             return factor, dim\n```",
+        "diff": "--- a/sympy/physics/units/unitsystem.py\n+++ b/sympy/physics/units/unitsystem.py\n@@ -163,12 +163,14 @@ class UnitSystem(_QuantityMapper):\n         elif isinstance(expr, Add):\n             factor, dim = self._collect_factor_and_dimension(expr.args[0])\n             for addend in expr.args[1:]:\n                 addend_factor, addend_dim = \\\n                     self._collect_factor_and_dimension(addend)\n-                if dim != addend_dim:\n+                # Check if dimensions are equivalent (same physical quantity)\n+                # by checking if their ratio is dimensionless\n+                if dim != addend_dim and not self.get_dimension_system().is_dimensionless(dim / addend_dim):\n                     raise ValueError(\n                         'Dimension of \"{}\" is {}, '\n                         'but it should be {}'.format(\n                             addend, addend_dim, dim))\n                 factor += addend_factor\n             return factor, dim\n",
+        "target_files": [
+          "sympy/physics/units/unitsystem.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 13444,
+        "completion_tokens": 1492
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 10777
+    }
+  ]
+}

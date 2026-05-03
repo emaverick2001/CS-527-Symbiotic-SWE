@@ -1,0 +1,96 @@
+{
+  "task_id": "sympy__sympy-15875",
+  "run_id": "d6058e5b",
+  "condition": "neural_cegf",
+  "success": true,
+  "termination_reason": "unsat",
+  "total_iterations": 1,
+  "total_prompt_tokens": 1487,
+  "total_completion_tokens": 809,
+  "total_duration_ms": 7171,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {
+    "unsat": 1
+  },
+  "patch_apply_failures": 0,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "64bd1d23",
+        "task_id": "sympy__sympy-15875",
+        "iteration": 0,
+        "raw_text": "Looking at this bug report, the issue is that `is_zero` returns `False` on `-2*I + (1 + I)**2` when it should return `True` (or `None` if it can't decide). After simplification, the expression becomes 0 and `is_zero` correctly returns `True`.\n\nThe problem is in the `is_zero` property of the `Add` class. Let me trace through the logic:\n\n- `-2*I + (1 + I)**2` expands to `-2*I + 1 + 2*I + I**2` = `-2*I + 1 + 2*I - 1` = `0`\n- But the `Add.is_zero` implementation is incorrectly determining this as `False`\n\nThe issue is typically in how `Add` evaluates `is_zero` when it has terms that might cancel out. Looking at the standard SymPy codebase, the `Add.is_zero` property should check if the expression simplifies to zero by examining its arguments more carefully.\n\nThe bug is in the `Add` class's `is_zero` property. When we have an `Add` with arguments that could cancel, we need to be more careful. The current implementation likely doesn't properly account for complex numbers or is_zero properties of arguments.\n\nLet me check the core logic: in `sympy/core/add.py`, the `is_zero` property should properly evaluate whether the sum is zero. The issue is that it's returning `False` too eagerly without fully evaluating.\n\nThe fix should ensure that when evaluating `is_zero` on an `Add`, we don't return `False` if we haven't actually verified the sum isn't zero. We should return `None` (unknown) in cases where we're not certain.\n\n```diff\n--- a/sympy/core/add.py\n+++ b/sympy/core/add.py\n@@ -530,16 +530,16 @@ class Add(Expr):\n         if self.is_commutative:\n             c = self.args[0]\n             h = hash(c)\n             assert hash(c) == h\n             return h ^ hash(self.__class__)\n \n         return super(Add, self).is_hash_equal(other)\n \n     @property\n     def is_zero(self):\n-        if not self.args:\n+        if len(self.args) == 0:\n             return True\n         elif len(self.args) == 1:\n             return self.args[0].is_zero\n-        else:\n-            return False\n+        else:\n+            return None\n \n     @property\n     def is_finite(self):\n```\n\nWait, that might be too aggressive. Let me reconsider. The issue is more subtle - we need to look at the actual implementation. Looking at the failing test `test_Add_is_zero`, the problem is that `is_zero` should return `None` instead of `False` when it cannot determine the answer for certain complex expressions.\n\n```diff\n--- a/sympy/core/add.py\n+++ b/sympy/core/add.py\n@@ -539,7 +539,7 @@ class Add(Expr):\n         elif len(self.args) == 1:\n             return self.args[0].is_zero\n         else:\n-            return False\n+            return None\n \n     @property\n     def is_finite(self):\n```",
+        "diff": "--- a/sympy/core/add.py\n+++ b/sympy/core/add.py\n@@ -539,7 +539,7 @@ class Add(Expr):\n         elif len(self.args) == 1:\n             return self.args[0].is_zero\n         else:\n-            return False\n+            return None\n \n     @property\n     def is_finite(self):\n",
+        "target_files": [
+          "sympy/core/add.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 1487,
+        "completion_tokens": 809
+      },
+      "program_slice": {
+        "schema_version": "0.1.0",
+        "slice_id": "90fdecc1",
+        "task_id": "sympy__sympy-15875",
+        "iteration": 0,
+        "target_functions": [
+          "_eval_is_zero"
+        ],
+        "modified_nodes": [
+          "sympy/core/add.py::_eval_is_zero"
+        ],
+        "affected_variables": [
+          "a",
+          "b",
+          "im",
+          "im_or_z",
+          "nz",
+          "self",
+          "z"
+        ],
+        "path_conditions": [
+          "self.is_commutative is False",
+          "z == len(self.args)",
+          "len(nz) == len(self.args)",
+          "b.is_zero",
+          "b.is_zero is False",
+          "a.is_real",
+          "not im_or_z and (not im)",
+          "im and (not im_or_z)",
+          "a.is_zero",
+          "a.is_imaginary",
+          "a.is_zero is False",
+          "(S.ImaginaryUnit * a).is_real"
+        ],
+        "related_tests": [
+          "sympy/core/add.py"
+        ],
+        "source_snippets": {
+          "sympy/core/add.py::_eval_is_zero": "def _eval_is_zero(self):\n    if self.is_commutative is False:\n        # issue 10528: there is no way to know if a nc symbol\n        # is zero or not\n        return\n    nz = []\n    z = 0\n    im_or_z = False\n    im = False\n    for a in self.args:\n        if a.is_real:\n            if a.is_zero:\n                z += 1\n            elif a.is_zero is False:\n                nz.append(a)\n            else:\n                return\n        elif a.is_imaginary:\n            im = True\n        elif (S.ImaginaryUnit*a).is_real:\n            im_or_z = True\n        else:\n            return\n    if z == len(self.args):\n        return True\n    if len(nz) == len(self.args):\n        return None\n    b = self.func(*nz)\n    if b.is_zero:\n        if not im_or_z and not im:\n            return True\n        if im and not im_or_z:\n            return False\n    if b.is_zero is False:\n        return False"
+        }
+      },
+      "solver_result": {
+        "schema_version": "0.1.0",
+        "solver_result_id": "3fd7ba35",
+        "task_id": "sympy__sympy-15875",
+        "iteration": 0,
+        "status": "unsat",
+        "model": null,
+        "violated_property": null,
+        "solver_time_ms": 0,
+        "error": null
+      },
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 7171
+    }
+  ]
+}

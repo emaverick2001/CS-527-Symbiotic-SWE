@@ -1,0 +1,38 @@
+{
+  "schema_version": "0.1.0",
+  "task_id": "sympy__sympy-24539",
+  "repo": "sympy/sympy",
+  "repo_commit": "193e3825645d93c73e31cdceb6d742cc6919624d",
+  "repo_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/workspaces/sympy__sympy-24539/repo",
+  "bug_description": "`PolyElement.as_expr()` not accepting symbols\nThe method `PolyElement.as_expr()`\r\n\r\nhttps://github.com/sympy/sympy/blob/193e3825645d93c73e31cdceb6d742cc6919624d/sympy/polys/rings.py#L618-L624\r\n\r\nis supposed to let you set the symbols you want to use, but, as it stands, either you pass the wrong number of symbols, and get an error message, or you pass the right number of symbols, and it ignores them, using `self.ring.symbols` instead:\r\n\r\n```python\r\n>>> from sympy import ring, ZZ, symbols\r\n>>> R, x, y, z = ring(\"x,y,z\", ZZ)\r\n>>> f = 3*x**2*y - x*y*z + 7*z**3 + 1\r\n>>> U, V, W = symbols(\"u,v,w\")\r\n>>> f.as_expr(U, V, W)\r\n3*x**2*y - x*y*z + 7*z**3 + 1\r\n```\n",
+  "failing_tests": [
+    "test_PolyElement_as_expr"
+  ],
+  "execution_trace": [],
+  "oracle": {
+    "type": "ground_truth",
+    "spec": {
+      "gold_patch": "diff --git a/sympy/polys/rings.py b/sympy/polys/rings.py\n--- a/sympy/polys/rings.py\n+++ b/sympy/polys/rings.py\n@@ -616,10 +616,13 @@ def set_ring(self, new_ring):\n             return new_ring.from_dict(self, self.ring.domain)\n \n     def as_expr(self, *symbols):\n-        if symbols and len(symbols) != self.ring.ngens:\n-            raise ValueError(\"not enough symbols, expected %s got %s\" % (self.ring.ngens, len(symbols)))\n-        else:\n+        if not symbols:\n             symbols = self.ring.symbols\n+        elif len(symbols) != self.ring.ngens:\n+            raise ValueError(\n+                \"Wrong number of symbols, expected %s got %s\" %\n+                (self.ring.ngens, len(symbols))\n+            )\n \n         return expr_from_dict(self.as_expr_dict(), *symbols)\n \n",
+      "test_patch": "diff --git a/sympy/polys/tests/test_rings.py b/sympy/polys/tests/test_rings.py\n--- a/sympy/polys/tests/test_rings.py\n+++ b/sympy/polys/tests/test_rings.py\n@@ -259,11 +259,11 @@ def test_PolyElement_as_expr():\n     assert f != g\n     assert f.as_expr() == g\n \n-    X, Y, Z = symbols(\"x,y,z\")\n-    g = 3*X**2*Y - X*Y*Z + 7*Z**3 + 1\n+    U, V, W = symbols(\"u,v,w\")\n+    g = 3*U**2*V - U*V*W + 7*W**3 + 1\n \n     assert f != g\n-    assert f.as_expr(X, Y, Z) == g\n+    assert f.as_expr(U, V, W) == g\n \n     raises(ValueError, lambda: f.as_expr(X))\n \n"
+    }
+  },
+  "metadata": {
+    "dataset": "SWE-bench Verified",
+    "difficulty": "<15 min fix",
+    "tags": [
+      "logic-heavy",
+      "multi_conditional_reasoning_bug"
+    ],
+    "logic_heavy": true,
+    "bug_type": "multi_conditional_reasoning_bug",
+    "repo_name": "sympy",
+    "status": "valid",
+    "subset": "dev",
+    "preprocessing_timestamp": "2026-05-01T16:10:31.451822+00:00",
+    "bug_report_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/dev/sympy__sympy-24539/bug_report.txt",
+    "failing_tests_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/dev/sympy__sympy-24539/failing_tests.json",
+    "oracle_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/dev/sympy__sympy-24539/oracle.json",
+    "repo_index_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/.cache/96856b53eed4c8ab.json",
+    "raw_fields_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/dev/sympy__sympy-24539/raw_fields.json"
+  }
+}

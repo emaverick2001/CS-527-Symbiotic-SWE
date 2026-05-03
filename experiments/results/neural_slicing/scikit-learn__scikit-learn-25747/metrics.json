@@ -1,0 +1,77 @@
+{
+  "task_id": "scikit-learn__scikit-learn-25747",
+  "run_id": "bd8d2d7d",
+  "condition": "neural_slicing",
+  "success": true,
+  "termination_reason": "slicing_only_patch_applied",
+  "total_iterations": 1,
+  "total_prompt_tokens": 5395,
+  "total_completion_tokens": 1000,
+  "total_duration_ms": 8050,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 0,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "bb96b066",
+        "task_id": "scikit-learn__scikit-learn-25747",
+        "iteration": 0,
+        "raw_text": "Looking at this bug, the issue is that when `FeatureUnion` uses pandas output and a transformer returns data with a different index (like when aggregating/grouping data), the `_wrap_in_pandas_container` function tries to set the original input's index on the transformed output, which has a different shape.\n\nThe problem is in `_wrap_in_pandas_container` in `sklearn/utils/_set_output.py`. When the data has already been transformed and has a different index (different length), we shouldn't force the original input's index onto it.\n\nLet me trace through the code:\n1. `MyTransformer.transform()` returns a Series with 4 unique dates (aggregated)\n2. The input data has 96 rows\n3. When pandas output is configured, `_wrap_in_pandas_container` is called with `index=getattr(original_input, \"index\", None)` which is the original 96-row index\n4. But `data_to_wrap` is now a Series with 4 elements, and trying to set a 96-element index on 4-element data fails\n\nThe fix is to check if the data being wrapped already has an index that doesn't match the original input's index length. If they don't match and the data is already a DataFrame/Series with its own index, we should keep that index rather than forcing the original input's index.\n\n```diff\n--- a/sklearn/utils/_set_output.py\n+++ b/sklearn/utils/_set_output.py\n@@ -54,8 +54,16 @@ def _wrap_in_pandas_container(\n     if isinstance(data_to_wrap, pd.DataFrame):\n         if columns is not None:\n             data_to_wrap.columns = columns\n-        if index is not None:\n-            data_to_wrap.index = index\n+        if index is not None:\n+            # Only set index if it matches the length of data_to_wrap\n+            # This prevents issues when transformers aggregate/change data shape\n+            if len(index) == len(data_to_wrap):\n+                data_to_wrap.index = index\n         return data_to_wrap\n \n+    if isinstance(data_to_wrap, pd.Series):\n+        if index is not None and len(index) == len(data_to_wrap):\n+            data_to_wrap.index = index\n+        return data_to_wrap.to_frame()\n+\n     return pd.DataFrame(data_to_wrap, index=index, columns=columns)\n```\n\nWait, let me reconsider. The issue is that `MyTransformer.transform()` returns a Series, not a DataFrame. When we try to convert it to a DataFrame with a mismatched index, it fails.\n\nLet me look more carefully at the stack trace and the code flow:\n\n1. `_wrap_data_with_container` calls `_wrap_in_pandas_container` with `index=getattr(original_input, \"index\", None)` \n2. The returned data from transformer is a Series with 4 elements\n3. We're trying to set index of length 96 on Series of length 4\n\nThe fix should check if index length matches before setting it:\n\n```diff\n--- a/sklearn/utils/_set_output.py\n+++ b/sklearn/utils/_set_output.py\n@@ -53,10 +53,17 @@ def _wrap_in_pandas_container(\n \n     if isinstance(data_to_wrap, pd.DataFrame):\n         if columns is not None:\n             data_to_wrap.columns = columns\n         if index is not None:\n-            data_to_wrap.index = index\n+            # Only set index if dimensions match\n+            if len(index) == len(data_to_wrap):\n+                data_to_wrap.index = index\n         return data_to_wrap\n \n+    if isinstance(data_to_wrap, pd.Series):\n+        if index is not None and len(index) == len(data_to_wrap):\n+            data_to_wrap.index = index\n+        return data_to_wrap.to_frame()\n+\n     return pd.DataFrame(data_to_wrap, index=index, columns=columns)\n```",
+        "diff": "--- a/sklearn/utils/_set_output.py\n+++ b/sklearn/utils/_set_output.py\n@@ -53,9 +53,16 @@ def _wrap_in_pandas_container(\n \n     if isinstance(data_to_wrap, pd.DataFrame):\n         if columns is not None:\n             data_to_wrap.columns = columns\n         if index is not None:\n-            data_to_wrap.index = index\n+            # Only set index if dimensions match\n+            if len(index) == len(data_to_wrap):\n+                data_to_wrap.index = index\n         return data_to_wrap\n \n+    if isinstance(data_to_wrap, pd.Series):\n+        if index is not None and len(index) == len(data_to_wrap):\n+            data_to_wrap.index = index\n+        return data_to_wrap.to_frame()\n+\n     return pd.DataFrame(data_to_wrap, index=index, columns=columns)\n",
+        "target_files": [
+          "sklearn/utils/_set_output.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 5395,
+        "completion_tokens": 1000
+      },
+      "program_slice": {
+        "schema_version": "0.1.0",
+        "slice_id": "9b8fd647",
+        "task_id": "scikit-learn__scikit-learn-25747",
+        "iteration": 0,
+        "target_functions": [
+          "_wrap_in_pandas_container"
+        ],
+        "modified_nodes": [
+          "sklearn/utils/_set_output.py::_wrap_in_pandas_container"
+        ],
+        "affected_variables": [
+          "columns",
+          "data_to_wrap",
+          "index",
+          "pd"
+        ],
+        "path_conditions": [
+          "issparse(data_to_wrap)",
+          "callable(columns)",
+          "isinstance(data_to_wrap, pd.DataFrame)",
+          "isinstance(data_to_wrap, pd.Series)",
+          "columns is not None",
+          "index is not None",
+          "index is not None and len(index) == len(data_to_wrap)",
+          "len(index) == len(data_to_wrap)"
+        ],
+        "related_tests": [
+          "sklearn/utils/_set_output.py"
+        ],
+        "source_snippets": {
+          "sklearn/utils/_set_output.py::_wrap_in_pandas_container": "def _wrap_in_pandas_container(\n    data_to_wrap,\n    *,\n    columns,\n    index=None,\n):\n    \"\"\"Create a Pandas DataFrame.\n\n    If `data_to_wrap` is a DataFrame, then the `columns` and `index` will be changed\n    inplace. If `data_to_wrap` is a ndarray, then a new DataFrame is created with\n    `columns` and `index`.\n\n    Parameters\n    ----------\n    data_to_wrap : {ndarray, dataframe}\n        Data to be wrapped as pandas dataframe.\n\n    columns : callable, ndarray, or None\n        The column names or a callable that returns the column names. The\n        callable is useful if the column names require some computation.\n        If `columns` is a callable that raises an error, `columns` will have\n        the same semantics as `None`. If `None` and `data_to_wrap` is already a\n        dataframe, then the column names are not changed. If `None` and\n        `data_to_wrap` is **not** a dataframe, then columns are\n        `range(n_features)`.\n\n    index : array-like, default=None\n        Index for data.\n\n    Returns\n    -------\n    dataframe : DataFrame\n        Container with column names or unchanged `output`.\n    \"\"\"\n    if issparse(data_to_wrap):\n        raise ValueError(\"Pandas output does not support sparse data.\")\n\n    if callable(columns):\n        try:\n            columns = columns()\n        except Exception:\n            columns = None\n\n    pd = check_pandas_support(\"Setting output container to 'pandas'\")\n\n    if isinstance(data_to_wrap, pd.DataFrame):\n        if columns is not None:\n            data_to_wrap.columns = columns\n        if index is not None:\n            # Only set index if dimensions match\n            if len(index) == len(data_to_wrap):\n                data_to_wrap.index = index\n        return data_to_wrap\n\n    if isinstance(data_to_wrap, pd.Series):\n        if index is not None and len(index) == len(data_to_wrap):\n            data_to_wrap.index = index\n        return data_to_wrap.to_frame()\n\n    return pd.DataFrame(data_to_wrap, index=index, columns=columns)"
+        }
+      },
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 8050
+    }
+  ]
+}

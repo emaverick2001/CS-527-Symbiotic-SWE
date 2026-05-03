@@ -1,0 +1,3 @@
+[
+  "sklearn/compose/tests/test_column_transformer.py::test_remainder_set_output"
+]

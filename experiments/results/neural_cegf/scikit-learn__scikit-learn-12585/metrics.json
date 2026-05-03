@@ -1,0 +1,93 @@
+{
+  "task_id": "scikit-learn__scikit-learn-12585",
+  "run_id": "c527034b",
+  "condition": "neural_cegf",
+  "success": true,
+  "termination_reason": "unsat",
+  "total_iterations": 1,
+  "total_prompt_tokens": 1544,
+  "total_completion_tokens": 556,
+  "total_duration_ms": 5256,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {
+    "unsat": 1
+  },
+  "patch_apply_failures": 0,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "7704fc2e",
+        "task_id": "scikit-learn__scikit-learn-12585",
+        "iteration": 0,
+        "raw_text": "Looking at this bug report, I need to understand the issue:\n\n1. The `clone` function fails when a parameter is an estimator type (class) rather than an instance\n2. The error occurs because `clone` tries to call `get_params()` on the class, which requires `self`\n3. The suggested fix is to check if the parameter `isinstance(estimator, type)` in addition to checking `hasattr(estimator, 'get_params')`\n\nLet me examine the relevant code in `sklearn/base.py` around line 51-62:\n\n```python\ndef clone(estimator, safe=True):\n    ...\n    elif not hasattr(estimator, 'get_params'):\n        # ... handle non-estimator\n    else:\n        new_object_params = estimator.get_params(deep=False)\n        ...\n```\n\nThe issue is that when `estimator` is a type/class that happens to have `get_params` as a method, `hasattr` will return `True`, but calling `estimator.get_params()` without an instance will fail.\n\nThe fix should check if `estimator` is a type (class) and treat it like a non-estimator object (don't try to clone it recursively).\n\nLet me look at the test to understand what the expected behavior should be:\n\nThe test `test_clone_estimator_types` would be testing that cloning an estimator with estimator type parameters works. The parameter value should be preserved as-is.\n\nHere's the fix:\n\n```diff\n--- a/sklearn/base.py\n+++ b/sklearn/base.py\n@@ -48,7 +48,7 @@ def clone(estimator, safe=True):\n             new_object_params[name] = clone(param, safe=safe)\n         else:\n             new_object_params[name] = param\n-    elif not hasattr(estimator, 'get_params'):\n+    elif not hasattr(estimator, 'get_params') or isinstance(estimator, type):\n         # if get_params does not exist, it is not an estimator\n         # or a dict with some estimator as value\n         return estimator\n```\n\nThis change ensures that if `estimator` is a type (class), it's treated as a non-estimator object and returned as-is, rather than attempting to call `get_params()` on it.",
+        "diff": "--- a/sklearn/base.py\n+++ b/sklearn/base.py\n@@ -48,7 +48,7 @@ def clone(estimator, safe=True):\n             new_object_params[name] = clone(param, safe=safe)\n         else:\n             new_object_params[name] = param\n-    elif not hasattr(estimator, 'get_params'):\n+    elif not hasattr(estimator, 'get_params') or isinstance(estimator, type):\n         # if get_params does not exist, it is not an estimator\n         # or a dict with some estimator as value\n         return estimator\n",
+        "target_files": [
+          "sklearn/base.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 1544,
+        "completion_tokens": 556
+      },
+      "program_slice": {
+        "schema_version": "0.1.0",
+        "slice_id": "511fbdbc",
+        "task_id": "scikit-learn__scikit-learn-12585",
+        "iteration": 0,
+        "target_functions": [
+          "clone"
+        ],
+        "modified_nodes": [
+          "sklearn/base.py::clone"
+        ],
+        "affected_variables": [
+          "e",
+          "estimator",
+          "estimator_type",
+          "klass",
+          "name",
+          "new_object",
+          "new_object_params",
+          "param",
+          "param1",
+          "param2",
+          "params_set",
+          "safe"
+        ],
+        "path_conditions": [
+          "estimator_type in (list, tuple, set, frozenset)",
+          "not hasattr(estimator, 'get_params') or isinstance(estimator, type)",
+          "param1 is not param2",
+          "not safe"
+        ],
+        "related_tests": [
+          "sklearn/base.py"
+        ],
+        "source_snippets": {
+          "sklearn/base.py::clone": "def clone(estimator, safe=True):\n    \"\"\"Constructs a new estimator with the same parameters.\n\n    Clone does a deep copy of the model in an estimator\n    without actually copying attached data. It yields a new estimator\n    with the same parameters that has not been fit on any data.\n\n    Parameters\n    ----------\n    estimator : estimator object, or list, tuple or set of objects\n        The estimator or group of estimators to be cloned\n\n    safe : boolean, optional\n        If safe is false, clone will fall back to a deep copy on objects\n        that are not estimators.\n\n    \"\"\"\n    estimator_type = type(estimator)\n    # XXX: not handling dictionaries\n    if estimator_type in (list, tuple, set, frozenset):\n        return estimator_type([clone(e, safe=safe) for e in estimator])\n    elif not hasattr(estimator, 'get_params') or isinstance(estimator, type):\n        if not safe:\n            return copy.deepcopy(estimator)\n        else:\n            raise TypeError(\"Cannot clone object '%s' (type %s): \"\n                            \"it does not seem to be a scikit-learn estimator \"\n                            \"as it does not implement a 'get_params' methods.\"\n                            % (repr(estimator), type(estimator)))\n    klass = estimator.__class__\n    new_object_params = estimator.get_params(deep=False)\n    for name, param in six.iteritems(new_object_params):\n        new_object_params[name] = clone(param, safe=False)\n    new_object = klass(**new_object_params)\n    params_set = new_object.get_params(deep=False)\n\n    # quick sanity check of the parameters of the clone\n    for name in new_object_params:\n        param1 = new_object_params[name]\n        param2 = params_set[name]\n        if param1 is not param2:\n            raise RuntimeError('Cannot clone object %s, as the constructor '\n                               'either does not set or modifies parameter %s' %\n                               (estimator, name))\n    return new_object"
+        }
+      },
+      "solver_result": {
+        "schema_version": "0.1.0",
+        "solver_result_id": "0c564691",
+        "task_id": "scikit-learn__scikit-learn-12585",
+        "iteration": 0,
+        "status": "unsat",
+        "model": null,
+        "violated_property": null,
+        "solver_time_ms": 0,
+        "error": null
+      },
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 5256
+    }
+  ]
+}

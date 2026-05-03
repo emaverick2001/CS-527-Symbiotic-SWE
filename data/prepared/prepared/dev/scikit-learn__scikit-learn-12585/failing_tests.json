@@ -1,0 +1,3 @@
+[
+  "sklearn/tests/test_base.py::test_clone_estimator_types"
+]

@@ -1,0 +1,104 @@
+{
+  "task_id": "matplotlib__matplotlib-26466",
+  "run_id": "b79adf3e",
+  "condition": "neural_solver",
+  "success": false,
+  "termination_reason": "budget_exhausted",
+  "total_iterations": 3,
+  "total_prompt_tokens": 6927,
+  "total_completion_tokens": 2667,
+  "total_duration_ms": 23694,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 3,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "5ff826ac",
+        "task_id": "matplotlib__matplotlib-26466",
+        "iteration": 0,
+        "raw_text": "Looking at this bug, the issue is that when an array is passed as the `xy` parameter to `annotate()`, the array reference is stored directly instead of being copied. Later modifications to the original array affect the annotation's position.\n\nI need to find where `annotate()` is defined and ensure it copies the `xy` and `xytext` parameters instead of storing references to them.\n\nLet me search for the `annotate` method. Based on the file structure, it should be in `lib/matplotlib/axes/_base.py` or related annotation files. The most likely location is in `lib/matplotlib/text.py` since that's where `Annotation` class would be defined.\n\nLooking at the test name `test_annotate_and_offsetfrom_copy_input`, I can infer that the fix should ensure inputs are copied.\n\nThe bug is in the `Annotation` class initialization. When `xy` and `xytext` parameters are passed, they should be copied rather than stored as references.\n\nLet me trace through the code:\n1. `ax.annotate()` calls `Annotation` class\n2. `Annotation` stores `xy` and `xytext` without copying\n3. When the original array is modified, the stored reference reflects those changes\n\nThe fix should be in the `Annotation.__init__` method to copy `xy` and `xytext` parameters.\n\n```diff\n--- a/lib/matplotlib/text.py\n+++ b/lib/matplotlib/text.py\n@@ -1,6 +1,7 @@\n \"\"\"\n This module contains classes for matplotlib annotations.\n \"\"\"\n+import numpy as np\n \n \n class Annotation(Text):\n@@ -50,8 +51,8 @@ class Annotation(Text):\n         if arrowprops is None:\n             self.arrowprops = None\n         else:\n             self.arrowprops = dict(arrowprops)\n \n-        self.xy = xy\n-        self.xytext = xytext\n+        self.xy = np.asarray(xy).copy() if xy is not None else xy\n+        self.xytext = np.asarray(xytext).copy() if xytext is not None else xytext\n```\n\nWait, I need to be more careful. Let me look at what the actual code structure should be. The `Annotation` class is in `lib/matplotlib/text.py`. Let me provide the correct patch:\n\n```diff\n--- a/lib/matplotlib/text.py\n+++ b/lib/matplotlib/text.py\n@@ -1089,8 +1089,8 @@ class Annotation(Text):\n             self.arrowprops = None\n         else:\n             self.arrowprops = dict(arrowprops)\n \n-        self.xy = xy\n-        self.xytext = xytext\n+        self.xy = np.asarray(xy).copy()\n+        self.xytext = np.asarray(xytext).copy()\n         self.xyann = xytext  # Deprecated.\n         self.set_annotation_clip(annotation_clip)\n         self.arrowpatch = None\n```",
+        "diff": "--- a/lib/matplotlib/text.py\n+++ b/lib/matplotlib/text.py\n@@ -1089,9 +1089,9 @@ class Annotation(Text):\n             self.arrowprops = None\n         else:\n             self.arrowprops = dict(arrowprops)\n \n-        self.xy = xy\n-        self.xytext = xytext\n+        self.xy = np.asarray(xy).copy()\n+        self.xytext = np.asarray(xytext).copy()\n         self.xyann = xytext  # Deprecated.\n         self.set_annotation_clip(annotation_clip)\n         self.arrowpatch = None\n",
+        "target_files": [
+          "lib/matplotlib/text.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch lib/matplotlib/text.py...\nerror: while searching for:\n            self.arrowprops = None\n        else:\n            self.arrowprops = dict(arrowprops)\n\n        self.xy = xy\n        self.xytext = xytext\n        self.xyann = xytext  # Deprecated.\n        self.set_annotation_clip(annotation_clip)\n        self.arrowpatch = None\n\nerror: patch failed: lib/matplotlib/text.py:1089\nApplying patch lib/matplotlib/text.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 2309,
+        "completion_tokens": 751
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 7348
+    },
+    {
+      "iteration": 1,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "26e77541",
+        "task_id": "matplotlib__matplotlib-26466",
+        "iteration": 1,
+        "raw_text": "Looking at the bug report, the issue is that when an array is passed as the `xy` parameter to `annotate()`, the annotation keeps a reference to the original array instead of copying it. This means that if the array is modified later, the annotation's position is updated as well.\n\nI need to find where the `annotate()` method is implemented and ensure it copies the `xy` and `xytext` parameters instead of keeping direct references.\n\nLet me search for the `annotate` method in the matplotlib codebase. Based on the repository structure, this would likely be in `lib/matplotlib/axes/_base.py` or `lib/matplotlib/text.py`.\n\nLooking at the failing test `test_annotate_and_offsetfrom_copy_input`, this suggests we need to copy the input arrays in the `annotate` method.\n\nThe issue is in the `annotate` method where `xy` and `xytext` parameters are used directly without copying them. The fix should copy these parameters to prevent external modifications from affecting the annotation.\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -3305,6 +3305,10 @@ class Axes(_AxesBase):\n         if isinstance(xy, str):\n             raise TypeError('xy must be a sequence of two numbers')\n \n+        # Ensure xy and xytext are copied to avoid issues with mutable inputs\n+        xy = np.asarray(xy, dtype=float).copy()\n+        if xytext is not None:\n+            xytext = np.asarray(xytext, dtype=float).copy()\n+\n         if xytext is None:\n             xytext = xy\n         elif isinstance(xytext, str):\n```\n\nWait, let me reconsider. The `annotate` method likely processes these further. Let me look for where the Annotation object is created and where these values are stored.\n\nThe key is to ensure that when we create the Annotation object, we pass copies of the arrays rather than the original references.\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -3305,6 +3305,14 @@ class Axes(_AxesBase):\n         if isinstance(xy, str):\n             raise TypeError('xy must be a sequence of two numbers')\n \n+        # Copy array inputs to prevent external modifications from affecting the annotation\n+        try:\n+            xy = np.asarray(xy).copy()\n+        except (ValueError, TypeError):\n+            pass\n+        try:\n+            xytext = np.asarray(xytext).copy()\n+        except (ValueError, TypeError):\n+            pass\n+\n         if xytext is None:\n             xytext = xy\n         elif isinstance(xytext, str):\n```\n\nActually, I need to be more careful. The copy should happen before any type checking. Let me provide the correct fix:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -3300,6 +3300,16 @@ class Axes(_AxesBase):\n             xy = self.transData.transform(xy)\n \n         if isinstance(xy, str):\n             raise TypeError('xy must be a sequence of two numbers')\n+        \n+        # Copy mutable array inputs to prevent external modifications\n+        if isinstance(xy, np.ndarray):\n+            xy = xy.copy()\n+        elif isinstance(xy, (list, tuple)):\n+            xy = np.asarray(xy).copy()\n+        \n+        if xytext is not None and isinstance(xytext, np.ndarray):\n+            xytext = xytext.copy()\n+        elif xytext is not None and isinstance(xytext, (list, tuple)):\n+            xytext = np.asarray(xytext).copy()\n \n         if xytext is None:\n             xytext = xy\n```\n\nLet me provide a cleaner, minimal fix that copies the inputs early in the method:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -3298,6 +3298,10 @@ class Axes(_AxesBase):\n         if isinstance(xy, str):\n             raise TypeError('xy must be a sequence of two numbers')\n \n+        xy = np.asarray(xy, dtype=float).copy()\n+        if xytext is not None:\n+            xytext = np.asarray(xytext, dtype=float).copy()\n+\n         if xytext is None:\n             xytext = xy\n         elif isinstance(xytext, str):\n```",
+        "diff": "--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -3298,6 +3298,10 @@ class Axes(_AxesBase):\n         if isinstance(xy, str):\n             raise TypeError('xy must be a sequence of two numbers')\n \n+        xy = np.asarray(xy, dtype=float).copy()\n+        if xytext is not None:\n+            xytext = np.asarray(xytext, dtype=float).copy()\n+\n         if xytext is None:\n             xytext = xy\n         elif isinstance(xytext, str):\n",
+        "target_files": [
+          "lib/matplotlib/axes/_base.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch lib/matplotlib/axes/_base.py...\nerror: while searching for:\n        if isinstance(xy, str):\n            raise TypeError('xy must be a sequence of two numbers')\n\n        if xytext is None:\n            xytext = xy\n        elif isinstance(xytext, str):\n\nerror: patch failed: lib/matplotlib/axes/_base.py:3298\nApplying patch lib/matplotlib/axes/_base.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 2309,
+        "completion_tokens": 1140
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 8974
+    },
+    {
+      "iteration": 2,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "7064ef61",
+        "task_id": "matplotlib__matplotlib-26466",
+        "iteration": 2,
+        "raw_text": "Looking at this bug, the issue is that when an array is passed as the `xy` parameter to `annotate()`, the same array reference is being stored instead of a copy. This causes the annotation to update whenever the original array is modified.\n\nLet me find the `annotate` method in the matplotlib codebase. Based on the test file path `lib/matplotlib/tests/test_text.py::test_annotate_and_offsetfrom_copy_input`, the fix should be in the `annotate` method, likely in `lib/matplotlib/axes/_base.py`.\n\nThe fix needs to ensure that when `xy` and `xytext` parameters are passed to `annotate()`, they are copied rather than stored by reference.\n\nLooking at the annotate implementation, the issue is in how the `xy` and `xytext` parameters are handled. They need to be copied to prevent external modifications from affecting the annotation.\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -7256,7 +7256,9 @@ class Axes(_AxesBase):\n         # this is the annotation instance, the user can use this to modify the\n         # defaults after an annotation instance is created\n-        annotation = mtext.Annotation(text, xy, xytext=xytext,\n+        # Ensure xy and xytext are copied to avoid external modifications\n+        xy = np.asarray(xy).copy()\n+        xytext = np.asarray(xytext).copy()\n+        annotation = mtext.Annotation(text, xy, xytext=xytext,\n                                      **kwargs)\n \n         self.add_artist(annotation)\n```\n\nWait, I need to check where `np` is imported. Let me provide the correct fix that ensures copies are made:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -7248,6 +7248,9 @@ class Axes(_AxesBase):\n             xytext = xy\n         else:\n             xytext = tuple(xytext)\n+        \n+        xy = np.asarray(xy).copy()\n+        xytext = np.asarray(xytext).copy()\n \n         # this is the annotation instance, the user can use this to modify the\n         # defaults after an annotation instance is created\n```\n\nActually, let me reconsider. The proper location and approach matters. Looking at text.py where Annotation is defined, the fix should be in the Annotation class or right before it's instantiated. Let me provide the correct minimal patch:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -7254,6 +7254,8 @@ class Axes(_AxesBase):\n         # this is the annotation instance, the user can use this to modify the\n         # defaults after an annotation instance is created\n+        xy = np.asarray(xy).copy()\n+        xytext = np.asarray(xytext).copy()\n         annotation = mtext.Annotation(text, xy, xytext=xytext,\n                                      **kwargs)\n \n```",
+        "diff": "--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -7254,4 +7254,6 @@ class Axes(_AxesBase):\n         # this is the annotation instance, the user can use this to modify the\n         # defaults after an annotation instance is created\n+        xy = np.asarray(xy).copy()\n+        xytext = np.asarray(xytext).copy()\n         annotation = mtext.Annotation(text, xy, xytext=xytext,\n                                      **kwargs)\n",
+        "target_files": [
+          "lib/matplotlib/axes/_base.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch lib/matplotlib/axes/_base.py...\nerror: while searching for:\n        # this is the annotation instance, the user can use this to modify the\n        # defaults after an annotation instance is created\n        annotation = mtext.Annotation(text, xy, xytext=xytext,\n                                     **kwargs)\n\nerror: patch failed: lib/matplotlib/axes/_base.py:7254\nApplying patch lib/matplotlib/axes/_base.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 2309,
+        "completion_tokens": 776
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 7371
+    }
+  ]
+}

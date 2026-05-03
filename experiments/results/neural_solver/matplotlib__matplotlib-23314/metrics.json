@@ -1,0 +1,132 @@
+{
+  "task_id": "matplotlib__matplotlib-23314",
+  "run_id": "5dd82075",
+  "condition": "neural_solver",
+  "success": true,
+  "termination_reason": "unsat",
+  "total_iterations": 2,
+  "total_prompt_tokens": 2838,
+  "total_completion_tokens": 1962,
+  "total_duration_ms": 15290,
+  "solver_duration_ms": 1,
+  "solver_outcomes": {
+    "unsat": 1
+  },
+  "patch_apply_failures": 1,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "1a42b515",
+        "task_id": "matplotlib__matplotlib-23314",
+        "iteration": 0,
+        "raw_text": "Looking at the bug report, the issue is that `set_visible(False)` doesn't work for 3D subplot axes. The test file indicates there's a test case `test_invisible_axes[png]` in `lib/mpl_toolkits/tests/test_mplot3d.py`.\n\nLet me analyze the problem:\n\n1. The bug is specifically about 3D projections not respecting `set_visible(False)`\n2. This is likely in the 3D axes implementation in `mpl_toolkits/mplot3d`\n\nThe issue is that 3D axes (`Axes3D`) likely override some rendering behavior but don't properly handle the visibility state. Looking at typical matplotlib architecture, when `set_visible(False)` is called, it should prevent drawing of the axes and all its components.\n\nThe most likely location for this bug is in the `Axes3D` class where it handles drawing. The `set_visible()` method needs to be properly implemented or the draw methods need to respect the visibility flag.\n\nLet me examine what would be the minimal fix. In matplotlib's 3D toolkit, the `Axes3D` class likely needs to check the `get_visible()` state before drawing, similar to how 2D axes do it.\n\nThe fix should be in `lib/mpl_toolkits/mplot3d/axes3d.py` where the `draw()` method should check visibility early and return if the axes are not visible.\n\n```diff\n--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -370,6 +370,9 @@ class Axes3D(Axes):\n         For 3D axes, this delegates to :meth:`~mpl_toolkits.mplot3d.axes3d.Axes3D.plot_surface`.\n         \"\"\"\n         artists = super().draw(renderer)\n+        # Early return if not visible\n+        if not self.get_visible():\n+            return artists\n         \n         # Ensure we update the projection\n         self._update_title_position(renderer)\n```\n\nWait, let me reconsider. The issue is that the parent class's `draw()` is already called. We need to add the visibility check at the very beginning:\n\n```diff\n--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -368,6 +368,9 @@ class Axes3D(Axes):\n         For 3D axes, this delegates to :meth:`~mpl_toolkits.mplot3d.axes3d.Axes3D.plot_surface`.\n         \"\"\"\n+        # Return early if not visible\n+        if not self.get_visible():\n+            return []\n         artists = super().draw(renderer)\n         \n         # Ensure we update the projection\n```\n\nActually, let me check the proper pattern. The `draw` method should check visibility first before doing any drawing operations:\n\n```diff\n--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -368,6 +368,8 @@ class Axes3D(Axes):\n         For 3D axes, this delegates to :meth:`~mpl_toolkits.mplot3d.axes3d.Axes3D.plot_surface`.\n         \"\"\"\n+        if not self.get_visible():\n+            return []\n         artists = super().draw(renderer)\n         \n         # Ensure we update the projection\n```\n\n<diff>\n--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -368,6 +368,8 @@ class Axes3D(Axes):\n         For 3D axes, this delegates to :meth:`~mpl_toolkits.mplot3d.axes3d.Axes3D.plot_surface`.\n         \"\"\"\n+        if not self.get_visible():\n+            return []\n         artists = super().draw(renderer)\n         \n         # Ensure we update the projection\n</diff>",
+        "diff": "--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -368,5 +368,7 @@ class Axes3D(Axes):\n         For 3D axes, this delegates to :meth:`~mpl_toolkits.mplot3d.axes3d.Axes3D.plot_surface`.\n         \"\"\"\n+        if not self.get_visible():\n+            return []\n         artists = super().draw(renderer)\n         \n         # Ensure we update the projection\n",
+        "target_files": [
+          "lib/mpl_toolkits/mplot3d/axes3d.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch lib/mpl_toolkits/mplot3d/axes3d.py...\nerror: while searching for:\n        For 3D axes, this delegates to :meth:`~mpl_toolkits.mplot3d.axes3d.Axes3D.plot_surface`.\n        \"\"\"\n        artists = super().draw(renderer)\n        \n        # Ensure we update the projection\n\nerror: patch failed: lib/mpl_toolkits/mplot3d/axes3d.py:368\nApplying patch lib/mpl_toolkits/mplot3d/axes3d.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 1419,
+        "completion_tokens": 1057
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 8682
+    },
+    {
+      "iteration": 1,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "e51c1a29",
+        "task_id": "matplotlib__matplotlib-23314",
+        "iteration": 1,
+        "raw_text": "Looking at this bug report, the issue is that `set_visible(False)` doesn't work for 3D axes (axes with projection='3d'). \n\nLet me first understand the problem by examining the test that's failing:\n- `lib/mpl_toolkits/tests/test_mplot3d.py::test_invisible_axes[png]`\n\nThe issue is likely in the 3D axes implementation where `set_visible()` doesn't properly hide all components of the 3D plot.\n\nIn matplotlib's 3D toolkit, the `Axes3D` class inherits from `Axes` but has additional artists (like the grid, spine, etc.) that need to be hidden when `set_visible(False)` is called.\n\nLooking at the mplot3d code structure, the `set_visible()` method in `Axes3D` needs to also control the visibility of 3D-specific elements. The base `Axes.set_visible()` method doesn't know about these 3D-specific artists.\n\nLet me check the typical structure: in `lib/mpl_toolkits/mplot3d/axes3d.py`, the `Axes3D` class should override `set_visible()` to also hide its 3D-specific components.\n\nThe fix should be in the `Axes3D` class to override `set_visible()` and ensure all 3D-specific artists are also made visible/invisible.\n\n```diff\n--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -378,6 +378,20 @@ class Axes3D(Axes):\n         self.zaxis.set_visible(visible)\n         self.grid(visible)\n \n+    def set_visible(self, b):\n+        \"\"\"\n+        Set the visibility of the Axes.\n+        \n+        Parameters\n+        ----------\n+        b : bool\n+        \"\"\"\n+        super().set_visible(b)\n+        # Also set visibility of 3D-specific elements\n+        self.xaxis.set_visible(b)\n+        self.yaxis.set_visible(b)\n+        self.zaxis.set_visible(b)\n+\n     def clear(self):\n         \"\"\"Clear the axes.\"\"\"\n         # Clear face and edge patches\n```\n\nWait, let me reconsider. The `set_visible()` method on `Axes` should handle children. The issue might be that the 3D axes have panes (the background planes) that aren't being hidden. Let me look more carefully at what components need to be hidden.\n\nThe 3D axes have `xaxis`, `yaxis`, `zaxis` as well as `xaxis.pane`, `yaxis.pane`, `zaxis.pane` that need to be hidden.\n\n```diff\n--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -378,6 +378,19 @@ class Axes3D(Axes):\n         self.zaxis.set_visible(visible)\n         self.grid(visible)\n \n+    def set_visible(self, b):\n+        \"\"\"\n+        Set the visibility of the Axes.\n+        \n+        Parameters\n+        ----------\n+        b : bool\n+        \"\"\"\n+        super().set_visible(b)\n+        self.xaxis.set_visible(b)\n+        self.yaxis.set_visible(b)\n+        self.zaxis.set_visible(b)\n+\n     def clear(self):\n         \"\"\"Clear the axes.\"\"\"\n         # Clear face and edge patches\n```",
+        "diff": "--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -378,6 +378,19 @@ class Axes3D(Axes):\n         self.zaxis.set_visible(visible)\n         self.grid(visible)\n \n+    def set_visible(self, b):\n+        \"\"\"\n+        Set the visibility of the Axes.\n+        \n+        Parameters\n+        ----------\n+        b : bool\n+        \"\"\"\n+        super().set_visible(b)\n+        self.xaxis.set_visible(b)\n+        self.yaxis.set_visible(b)\n+        self.zaxis.set_visible(b)\n+\n     def clear(self):\n         \"\"\"Clear the axes.\"\"\"\n         # Clear face and edge patches\n",
+        "target_files": [
+          "lib/mpl_toolkits/mplot3d/axes3d.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 1419,
+        "completion_tokens": 905
+      },
+      "program_slice": {
+        "schema_version": "0.1.0",
+        "slice_id": "30bbf5e3",
+        "task_id": "matplotlib__matplotlib-23314",
+        "iteration": 1,
+        "target_functions": [
+          "apply_aspect",
+          "draw"
+        ],
+        "modified_nodes": [
+          "lib/mpl_toolkits/mplot3d/axes3d.py::apply_aspect",
+          "lib/mpl_toolkits/mplot3d/axes3d.py::draw"
+        ],
+        "affected_variables": [
+          "bb",
+          "box_aspect",
+          "fig_aspect",
+          "pb",
+          "pb1",
+          "position",
+          "self",
+          "trans",
+          "artist",
+          "axis",
+          "collection_zorder",
+          "collections_and_patches",
+          "locator",
+          "patch_zorder",
+          "pos",
+          "renderer",
+          "zorder_offset"
+        ],
+        "path_conditions": [
+          "position is None",
+          "locator",
+          "self.computed_zorder",
+          "self._axis3don",
+          "isinstance(artist, mcoll.Collection)",
+          "isinstance(artist, mpatches.Patch)"
+        ],
+        "related_tests": [
+          "lib/mpl_toolkits/mplot3d/axes3d.py"
+        ],
+        "source_snippets": {
+          "lib/mpl_toolkits/mplot3d/axes3d.py::apply_aspect": "def apply_aspect(self, position=None):\n    if position is None:\n        position = self.get_position(original=True)\n\n    # in the superclass, we would go through and actually deal with axis\n    # scales and box/datalim. Those are all irrelevant - all we need to do\n    # is make sure our coordinate system is square.\n    trans = self.get_figure().transSubfigure\n    bb = mtransforms.Bbox.unit().transformed(trans)\n    # this is the physical aspect of the panel (or figure):\n    fig_aspect = bb.height / bb.width\n\n    box_aspect = 1\n    pb = position.frozen()\n    pb1 = pb.shrunk_to_aspect(box_aspect, pb, fig_aspect)\n    self._set_position(pb1.anchored(self.get_anchor(), pb), 'active')",
+          "lib/mpl_toolkits/mplot3d/axes3d.py::draw": "def draw(self, renderer):\n    self._unstale_viewLim()\n\n    # draw the background patch\n    self.patch.draw(renderer)\n    self._frameon = False\n\n    # first, set the aspect\n    # this is duplicated from `axes._base._AxesBase.draw`\n    # but must be called before any of the artist are drawn as\n    # it adjusts the view limits and the size of the bounding box\n    # of the Axes\n    locator = self.get_axes_locator()\n    if locator:\n        pos = locator(self, renderer)\n        self.apply_aspect(pos)\n    else:\n        self.apply_aspect()\n\n    # add the projection matrix to the renderer\n    self.M = self.get_proj()\n\n    collections_and_patches = (\n        artist for artist in self._children\n        if isinstance(artist, (mcoll.Collection, mpatches.Patch))\n        and artist.get_visible())\n    if self.computed_zorder:\n        # Calculate projection of collections and patches and zorder\n        # them. Make sure they are drawn above the grids.\n        zorder_offset = max(axis.get_zorder()\n                            for axis in self._axis_map.values()) + 1\n        collection_zorder = patch_zorder = zorder_offset\n\n        for artist in sorted(collections_and_patches,\n                             key=lambda artist: artist.do_3d_projection(),\n                             reverse=True):\n            if isinstance(artist, mcoll.Collection):\n                artist.zorder = collection_zorder\n                collection_zorder += 1\n            elif isinstance(artist, mpatches.Patch):\n                artist.zorder = patch_zorder\n                patch_zorder += 1\n    else:\n        for artist in collections_and_patches:\n            artist.do_3d_projection()\n\n    if self._axis3don:\n        # Draw panes first\n        for axis in self._axis_map.values():\n            axis.draw_pane(renderer)\n        # Then axes\n        for axis in self._axis_map.values():\n            axis.draw(renderer)\n\n    # Then rest\n    super().draw(renderer)"
+        }
+      },
+      "solver_result": {
+        "schema_version": "0.1.0",
+        "solver_result_id": "b2915c42",
+        "task_id": "matplotlib__matplotlib-23314",
+        "iteration": 1,
+        "status": "unsat",
+        "model": null,
+        "violated_property": null,
+        "solver_time_ms": 1,
+        "error": null
+      },
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 6607
+    }
+  ]
+}

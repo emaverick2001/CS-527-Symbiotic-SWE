@@ -1,0 +1,104 @@
+{
+  "task_id": "scikit-learn__scikit-learn-10908",
+  "run_id": "4481031d",
+  "condition": "neural_solver",
+  "success": false,
+  "termination_reason": "budget_exhausted",
+  "total_iterations": 3,
+  "total_prompt_tokens": 11871,
+  "total_completion_tokens": 2088,
+  "total_duration_ms": 18435,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 3,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "0d19ece5",
+        "task_id": "scikit-learn__scikit-learn-10908",
+        "iteration": 0,
+        "raw_text": "Looking at this bug, I need to understand the issue:\n\n1. When `CountVectorizer` is initialized with a `vocabulary` parameter, `get_feature_names()` raises `NotFittedError`\n2. However, `transform()` works fine because it calls `_validate_vocabulary()` which sets `vocabulary_`\n3. The issue is that `get_feature_names()` checks for `vocabulary_` attribute but doesn't call `_validate_vocabulary()` like `transform()` does\n\nLet me search for the relevant code in the `CountVectorizer` class to understand the structure better.\n\nLooking at the code structure, I need to find:\n1. The `get_feature_names()` method\n2. The `_validate_vocabulary()` method\n3. How `transform()` uses `_validate_vocabulary()`\n\nThe fix should be to make `get_feature_names()` call `_validate_vocabulary()` before checking for the `vocabulary_` attribute, similar to what `transform()` does.\n\nBased on the bug description, the `get_feature_names()` method should validate/initialize the vocabulary from the `vocabulary` parameter if `vocabulary_` hasn't been set yet.\n\nHere's the patch:\n\n```diff\n--- a/sklearn/feature_extraction/text.py\n+++ b/sklearn/feature_extraction/text.py\n@@ -1022,6 +1022,7 @@ class CountVectorizer(BaseEstimator, VectorizerMixin,\n         Returns\n         -------\n         names : list\n             A list of terms.\n         \"\"\"\n-        check_is_fitted(self, 'vocabulary_')\n+        self._validate_vocabulary()\n         return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                      key=itemgetter(1))]\n```\n\nWait, let me reconsider. Looking at the test and the description more carefully, the issue is that `get_feature_names()` uses `check_is_fitted()` which requires `vocabulary_` to exist, but when `vocabulary` is provided at init time, `vocabulary_` isn't created until `transform()` is called (which calls `_validate_vocabulary()`).\n\nThe fix should call `_validate_vocabulary()` in `get_feature_names()` similar to how `transform()` does it, so that if a `vocabulary` parameter was provided, it gets converted to the `vocabulary_` attribute.\n\n```diff\n--- a/sklearn/feature_extraction/text.py\n+++ b/sklearn/feature_extraction/text.py\n@@ -1019,8 +1019,8 @@ class CountVectorizer(BaseEstimator, VectorizerMixin,\n         Returns\n         -------\n         names : list\n             A list of terms.\n         \"\"\"\n-        check_is_fitted(self, 'vocabulary_')\n+        self._validate_vocabulary()\n         return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                      key=itemgetter(1))]\n```",
+        "diff": "--- a/sklearn/feature_extraction/text.py\n+++ b/sklearn/feature_extraction/text.py\n@@ -1019,8 +1019,8 @@ class CountVectorizer(BaseEstimator, VectorizerMixin,\n         Returns\n         -------\n         names : list\n             A list of terms.\n         \"\"\"\n-        check_is_fitted(self, 'vocabulary_')\n+        self._validate_vocabulary()\n         return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                      key=itemgetter(1))]\n",
+        "target_files": [
+          "sklearn/feature_extraction/text.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch sklearn/feature_extraction/text.py...\nerror: while searching for:\n        Returns\n        -------\n        names : list\n            A list of terms.\n        \"\"\"\n        check_is_fitted(self, 'vocabulary_')\n        return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                     key=itemgetter(1))]\n\nerror: patch failed: sklearn/feature_extraction/text.py:1019\nApplying patch sklearn/feature_extraction/text.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 3957,
+        "completion_tokens": 718
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 6199
+    },
+    {
+      "iteration": 1,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "b9131911",
+        "task_id": "scikit-learn__scikit-learn-10908",
+        "iteration": 1,
+        "raw_text": "Looking at the bug report, the issue is that `CountVectorizer.get_feature_names()` raises `NotFittedError` even when a `vocabulary` parameter is provided at initialization. However, `transform()` works fine because it calls `_validate_vocabulary()` which sets `vocabulary_`.\n\nThe fix should be to make `get_feature_names()` call `_validate_vocabulary()` to ensure `vocabulary_` is set when a vocabulary was provided, similar to what `transform()` does.\n\nLet me examine the test file to understand what's expected:\n\nThe test `test_feature_names` likely tests that `get_feature_names()` should work when vocabulary is provided without fitting.\n\nLooking at the code structure, I need to:\n1. Find the `get_feature_names()` method in `CountVectorizer`\n2. Make it call `_validate_vocabulary()` before trying to access `vocabulary_`\n\nHere's the fix:\n\n```diff\n--- a/sklearn/feature_extraction/text.py\n+++ b/sklearn/feature_extraction/text.py\n@@ -885,7 +885,7 @@ class CountVectorizer(BaseEstimator, TransformerMixin, VectorizerMixin):\n         Returns\n         -------\n         feature_names : list\n             A list of feature names.\n         \"\"\"\n-        check_is_fitted(self, 'vocabulary_')\n+        self._validate_vocabulary()\n \n         return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                      key=itemgetter(1))]\n```\n\nThis change makes `get_feature_names()` call `_validate_vocabulary()` instead of just checking if `vocabulary_` exists. The `_validate_vocabulary()` method will:\n1. Set `vocabulary_` from the provided `vocabulary` parameter if it hasn't been set yet\n2. Raise `NotFittedError` only if neither a vocabulary was provided nor has the vectorizer been fitted\n\nThis matches the behavior of `transform()` which also calls `_validate_vocabulary()`.",
+        "diff": "--- a/sklearn/feature_extraction/text.py\n+++ b/sklearn/feature_extraction/text.py\n@@ -885,9 +885,9 @@ class CountVectorizer(BaseEstimator, TransformerMixin, VectorizerMixin):\n         Returns\n         -------\n         feature_names : list\n             A list of feature names.\n         \"\"\"\n-        check_is_fitted(self, 'vocabulary_')\n+        self._validate_vocabulary()\n \n         return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                      key=itemgetter(1))]\n",
+        "target_files": [
+          "sklearn/feature_extraction/text.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch sklearn/feature_extraction/text.py...\nerror: while searching for:\n        Returns\n        -------\n        feature_names : list\n            A list of feature names.\n        \"\"\"\n        check_is_fitted(self, 'vocabulary_')\n\n        return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                     key=itemgetter(1))]\n\nerror: patch failed: sklearn/feature_extraction/text.py:885\nApplying patch sklearn/feature_extraction/text.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 3957,
+        "completion_tokens": 487
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 4770
+    },
+    {
+      "iteration": 2,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "8ac5f8d4",
+        "task_id": "scikit-learn__scikit-learn-10908",
+        "iteration": 2,
+        "raw_text": "Looking at this bug report, I need to understand the issue:\n\n1. When `CountVectorizer` is initialized with a `vocabulary` parameter, `get_feature_names()` raises `NotFittedError` even though the vectorizer can still call `transform()` successfully.\n2. The `transform()` method calls `_validate_vocabulary()` which sets the `vocabulary_` instance variable.\n3. The `get_feature_names()` method should work similarly - it should validate the vocabulary if provided during initialization, rather than raising `NotFittedError`.\n\nLet me examine the test file to understand what behavior is expected:\n\nThe test `test_feature_names` likely expects that `get_feature_names()` should work when vocabulary is provided at initialization, just like `transform()` does.\n\nThe fix should make `get_feature_names()` call `_validate_vocabulary()` before checking for the `vocabulary_` attribute, similar to what `transform()` does.\n\nLooking at the code structure in `sklearn/feature_extraction/text.py`, I need to find the `get_feature_names()` method in the `CountVectorizer` class and modify it to validate the vocabulary before using it.\n\nThe pattern should be:\n1. In `get_feature_names()`, call `_validate_vocabulary()` to ensure `vocabulary_` is set (whether from fitting or from the initialization parameter)\n2. Then proceed to return the feature names\n\n```diff\n--- a/sklearn/feature_extraction/text.py\n+++ b/sklearn/feature_extraction/text.py\n@@ -882,6 +882,7 @@ class CountVectorizer(BaseEstimator, TransformerMixin):\n         Returns\n         -------\n         names : list\n             A list of terms.\n         \"\"\"\n+        self._validate_vocabulary()\n         return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                      key=itemgetter(1))]\n```\n\nWait, I need to find the exact location and context. Let me look for `get_feature_names` in the `CountVectorizer` class. Since this is inherited or defined in the vectorizer classes, I should check the actual implementation.\n\nThe method likely calls `check_is_fitted` or directly accesses `self.vocabulary_`. The fix is to call `_validate_vocabulary()` before accessing `vocabulary_`.\n\n```diff\n--- a/sklearn/feature_extraction/text.py\n+++ b/sklearn/feature_extraction/text.py\n@@ -880,6 +880,7 @@ class CountVectorizer(BaseEstimator, TransformerMixin):\n         Returns\n         -------\n         names : list\n             A list of terms.\n         \"\"\"\n         check_is_fitted(self, 'vocabulary_')\n+        self._validate_vocabulary()\n         return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                      key=itemgetter(1))]\n```\n\nActually, the better fix is to replace `check_is_fitted` with `_validate_vocabulary()` since the latter will handle both cases (fitted and vocabulary provided at init):\n\n```diff\n--- a/sklearn/feature_extraction/text.py\n+++ b/sklearn/feature_extraction/text.py\n@@ -880,6 +880,7 @@ class CountVectorizer(BaseEstimator, TransformerMixin):\n         Returns\n         -------\n         names : list\n             A list of terms.\n         \"\"\"\n-        check_is_fitted(self, 'vocabulary_')\n+        self._validate_vocabulary()\n         return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                      key=itemgetter(1))]\n```",
+        "diff": "--- a/sklearn/feature_extraction/text.py\n+++ b/sklearn/feature_extraction/text.py\n@@ -880,8 +880,8 @@ class CountVectorizer(BaseEstimator, TransformerMixin):\n         Returns\n         -------\n         names : list\n             A list of terms.\n         \"\"\"\n-        check_is_fitted(self, 'vocabulary_')\n+        self._validate_vocabulary()\n         return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                      key=itemgetter(1))]\n",
+        "target_files": [
+          "sklearn/feature_extraction/text.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch sklearn/feature_extraction/text.py...\nerror: while searching for:\n        Returns\n        -------\n        names : list\n            A list of terms.\n        \"\"\"\n        check_is_fitted(self, 'vocabulary_')\n        return [t for t, i in sorted(six.iteritems(self.vocabulary_),\n                                     key=itemgetter(1))]\n\nerror: patch failed: sklearn/feature_extraction/text.py:880\nApplying patch sklearn/feature_extraction/text.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 3957,
+        "completion_tokens": 883
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 7465
+    }
+  ]
+}

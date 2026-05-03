@@ -1,0 +1,38 @@
+{
+  "schema_version": "0.1.0",
+  "task_id": "scikit-learn__scikit-learn-13496",
+  "repo": "scikit-learn/scikit-learn",
+  "repo_commit": "3aefc834dce72e850bff48689bea3c7dff5f3fad",
+  "repo_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/workspaces/scikit-learn__scikit-learn-13496/repo",
+  "bug_description": "Expose warm_start in Isolation forest\nIt seems to me that `sklearn.ensemble.IsolationForest` supports incremental addition of new trees with the `warm_start` parameter of its parent class, `sklearn.ensemble.BaseBagging`.\r\n\r\nEven though this parameter is not exposed in `__init__()` , it gets inherited from `BaseBagging` and one can use it by changing it to `True` after initialization. To make it work, you have to also increment `n_estimators` on every iteration. \r\n\r\nIt took me a while to notice that it actually works, and I had to inspect the source code of both `IsolationForest` and `BaseBagging`. Also, it looks to me that the behavior is in-line with `sklearn.ensemble.BaseForest` that is behind e.g. `sklearn.ensemble.RandomForestClassifier`.\r\n\r\nTo make it more easier to use, I'd suggest to:\r\n* expose `warm_start` in `IsolationForest.__init__()`, default `False`;\r\n* document it in the same way as it is documented for `RandomForestClassifier`, i.e. say:\r\n```py\r\n    warm_start : bool, optional (default=False)\r\n        When set to ``True``, reuse the solution of the previous call to fit\r\n        and add more estimators to the ensemble, otherwise, just fit a whole\r\n        new forest. See :term:`the Glossary <warm_start>`.\r\n```\r\n* add a test to make sure it works properly;\r\n* possibly also mention in the \"IsolationForest example\" documentation entry;\r\n\n",
+  "failing_tests": [
+    "sklearn/ensemble/tests/test_iforest.py::test_iforest_warm_start"
+  ],
+  "execution_trace": [],
+  "oracle": {
+    "type": "ground_truth",
+    "spec": {
+      "gold_patch": "diff --git a/sklearn/ensemble/iforest.py b/sklearn/ensemble/iforest.py\n--- a/sklearn/ensemble/iforest.py\n+++ b/sklearn/ensemble/iforest.py\n@@ -120,6 +120,12 @@ class IsolationForest(BaseBagging, OutlierMixin):\n     verbose : int, optional (default=0)\n         Controls the verbosity of the tree building process.\n \n+    warm_start : bool, optional (default=False)\n+        When set to ``True``, reuse the solution of the previous call to fit\n+        and add more estimators to the ensemble, otherwise, just fit a whole\n+        new forest. See :term:`the Glossary <warm_start>`.\n+\n+        .. versionadded:: 0.21\n \n     Attributes\n     ----------\n@@ -173,7 +179,8 @@ def __init__(self,\n                  n_jobs=None,\n                  behaviour='old',\n                  random_state=None,\n-                 verbose=0):\n+                 verbose=0,\n+                 warm_start=False):\n         super().__init__(\n             base_estimator=ExtraTreeRegressor(\n                 max_features=1,\n@@ -185,6 +192,7 @@ def __init__(self,\n             n_estimators=n_estimators,\n             max_samples=max_samples,\n             max_features=max_features,\n+            warm_start=warm_start,\n             n_jobs=n_jobs,\n             random_state=random_state,\n             verbose=verbose)\n",
+      "test_patch": "diff --git a/sklearn/ensemble/tests/test_iforest.py b/sklearn/ensemble/tests/test_iforest.py\n--- a/sklearn/ensemble/tests/test_iforest.py\n+++ b/sklearn/ensemble/tests/test_iforest.py\n@@ -295,6 +295,28 @@ def test_score_samples():\n                        clf2.score_samples([[2., 2.]]))\n \n \n+@pytest.mark.filterwarnings('ignore:default contamination')\n+@pytest.mark.filterwarnings('ignore:behaviour=\"old\"')\n+def test_iforest_warm_start():\n+    \"\"\"Test iterative addition of iTrees to an iForest \"\"\"\n+\n+    rng = check_random_state(0)\n+    X = rng.randn(20, 2)\n+\n+    # fit first 10 trees\n+    clf = IsolationForest(n_estimators=10, max_samples=20,\n+                          random_state=rng, warm_start=True)\n+    clf.fit(X)\n+    # remember the 1st tree\n+    tree_1 = clf.estimators_[0]\n+    # fit another 10 trees\n+    clf.set_params(n_estimators=20)\n+    clf.fit(X)\n+    # expecting 20 fitted trees and no overwritten trees\n+    assert len(clf.estimators_) == 20\n+    assert clf.estimators_[0] is tree_1\n+\n+\n @pytest.mark.filterwarnings('ignore:default contamination')\n @pytest.mark.filterwarnings('ignore:behaviour=\"old\"')\n def test_deprecation():\n"
+    }
+  },
+  "metadata": {
+    "dataset": "SWE-bench Verified",
+    "difficulty": "<15 min fix",
+    "tags": [
+      "logic-heavy",
+      "arithmetic_predicate_bug"
+    ],
+    "logic_heavy": true,
+    "bug_type": "arithmetic_predicate_bug",
+    "repo_name": "scikit-learn",
+    "status": "valid",
+    "subset": "final_eval",
+    "preprocessing_timestamp": "2026-05-01T16:10:31.451822+00:00",
+    "bug_report_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/final_eval/scikit-learn__scikit-learn-13496/bug_report.txt",
+    "failing_tests_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/final_eval/scikit-learn__scikit-learn-13496/failing_tests.json",
+    "oracle_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/final_eval/scikit-learn__scikit-learn-13496/oracle.json",
+    "repo_index_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/.cache/02d375ca31dd5230.json",
+    "raw_fields_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/final_eval/scikit-learn__scikit-learn-13496/raw_fields.json"
+  }
+}

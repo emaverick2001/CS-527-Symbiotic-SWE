@@ -1,0 +1,4 @@
+[
+  "lib/matplotlib/tests/test_axes.py::test_xaxis_offsetText_color",
+  "lib/matplotlib/tests/test_axes.py::test_yaxis_offsetText_color"
+]

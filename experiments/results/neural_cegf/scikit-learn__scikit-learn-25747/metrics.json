@@ -1,0 +1,86 @@
+{
+  "task_id": "scikit-learn__scikit-learn-25747",
+  "run_id": "27af11ca",
+  "condition": "neural_cegf",
+  "success": true,
+  "termination_reason": "unsat",
+  "total_iterations": 1,
+  "total_prompt_tokens": 5395,
+  "total_completion_tokens": 471,
+  "total_duration_ms": 4495,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {
+    "unsat": 1
+  },
+  "patch_apply_failures": 0,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "946ecf48",
+        "task_id": "scikit-learn__scikit-learn-25747",
+        "iteration": 0,
+        "raw_text": "Looking at the bug report, the issue is that when using `pandas` output with `FeatureUnion`, if a transformer returns data with a different number of rows than the input (like the aggregation case where 96 rows become 4), the `_wrap_in_pandas_container` function tries to set the index of the output DataFrame to the input's index, causing a length mismatch error.\n\nThe problem is in `sklearn/utils/_set_output.py` in the `_wrap_in_pandas_container` function. When `data_to_wrap` is already a DataFrame (which happens when a transformer returns a Series that gets converted to DataFrame), we should validate that the index length matches before trying to assign it.\n\nLooking at the test `test_set_output_pandas_keep_index`, the expected behavior is that when a transformer changes the number of rows, we should not force the original index onto the output. Instead, we should only set the index if it's compatible with the data shape.\n\nThe fix is to check if the index length matches the data length before assigning it:\n\n```diff\n--- a/sklearn/utils/_set_output.py\n+++ b/sklearn/utils/_set_output.py\n@@ -55,7 +55,8 @@ def _wrap_in_pandas_container(\n     if isinstance(data_to_wrap, pd.DataFrame):\n         if columns is not None:\n             data_to_wrap.columns = columns\n-        if index is not None:\n+        # Only set index if it has the same length as the data\n+        if index is not None and len(index) == len(data_to_wrap):\n             data_to_wrap.index = index\n         return data_to_wrap\n \n```\n\nThis ensures that:\n1. When a transformer preserves the number of rows, the index is maintained (normal case)\n2. When a transformer changes the number of rows (aggregation case), the index is not forced, allowing pandas to use its default RangeIndex\n3. The fix is minimal and doesn't affect other functionality",
+        "diff": "--- a/sklearn/utils/_set_output.py\n+++ b/sklearn/utils/_set_output.py\n@@ -55,6 +55,7 @@ def _wrap_in_pandas_container(\n     if isinstance(data_to_wrap, pd.DataFrame):\n         if columns is not None:\n             data_to_wrap.columns = columns\n-        if index is not None:\n+        # Only set index if it has the same length as the data\n+        if index is not None and len(index) == len(data_to_wrap):\n             data_to_wrap.index = index\n         return data_to_wrap\n",
+        "target_files": [
+          "sklearn/utils/_set_output.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 5395,
+        "completion_tokens": 471
+      },
+      "program_slice": {
+        "schema_version": "0.1.0",
+        "slice_id": "4f18b9f7",
+        "task_id": "scikit-learn__scikit-learn-25747",
+        "iteration": 0,
+        "target_functions": [
+          "_wrap_in_pandas_container"
+        ],
+        "modified_nodes": [
+          "sklearn/utils/_set_output.py::_wrap_in_pandas_container"
+        ],
+        "affected_variables": [
+          "columns",
+          "data_to_wrap",
+          "index",
+          "pd"
+        ],
+        "path_conditions": [
+          "issparse(data_to_wrap)",
+          "callable(columns)",
+          "isinstance(data_to_wrap, pd.DataFrame)",
+          "columns is not None",
+          "index is not None and len(index) == len(data_to_wrap)"
+        ],
+        "related_tests": [
+          "sklearn/utils/_set_output.py"
+        ],
+        "source_snippets": {
+          "sklearn/utils/_set_output.py::_wrap_in_pandas_container": "def _wrap_in_pandas_container(\n    data_to_wrap,\n    *,\n    columns,\n    index=None,\n):\n    \"\"\"Create a Pandas DataFrame.\n\n    If `data_to_wrap` is a DataFrame, then the `columns` and `index` will be changed\n    inplace. If `data_to_wrap` is a ndarray, then a new DataFrame is created with\n    `columns` and `index`.\n\n    Parameters\n    ----------\n    data_to_wrap : {ndarray, dataframe}\n        Data to be wrapped as pandas dataframe.\n\n    columns : callable, ndarray, or None\n        The column names or a callable that returns the column names. The\n        callable is useful if the column names require some computation.\n        If `columns` is a callable that raises an error, `columns` will have\n        the same semantics as `None`. If `None` and `data_to_wrap` is already a\n        dataframe, then the column names are not changed. If `None` and\n        `data_to_wrap` is **not** a dataframe, then columns are\n        `range(n_features)`.\n\n    index : array-like, default=None\n        Index for data.\n\n    Returns\n    -------\n    dataframe : DataFrame\n        Container with column names or unchanged `output`.\n    \"\"\"\n    if issparse(data_to_wrap):\n        raise ValueError(\"Pandas output does not support sparse data.\")\n\n    if callable(columns):\n        try:\n            columns = columns()\n        except Exception:\n            columns = None\n\n    pd = check_pandas_support(\"Setting output container to 'pandas'\")\n\n    if isinstance(data_to_wrap, pd.DataFrame):\n        if columns is not None:\n            data_to_wrap.columns = columns\n        # Only set index if it has the same length as the data\n        if index is not None and len(index) == len(data_to_wrap):\n            data_to_wrap.index = index\n        return data_to_wrap\n\n    return pd.DataFrame(data_to_wrap, index=index, columns=columns)"
+        }
+      },
+      "solver_result": {
+        "schema_version": "0.1.0",
+        "solver_result_id": "690d6d2f",
+        "task_id": "scikit-learn__scikit-learn-25747",
+        "iteration": 0,
+        "status": "unsat",
+        "model": null,
+        "violated_property": null,
+        "solver_time_ms": 0,
+        "error": null
+      },
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 4495
+    }
+  ]
+}

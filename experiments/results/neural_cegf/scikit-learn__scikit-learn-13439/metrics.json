@@ -1,0 +1,78 @@
+{
+  "task_id": "scikit-learn__scikit-learn-13439",
+  "run_id": "108e9d1b",
+  "condition": "neural_cegf",
+  "success": true,
+  "termination_reason": "unsat",
+  "total_iterations": 1,
+  "total_prompt_tokens": 6758,
+  "total_completion_tokens": 607,
+  "total_duration_ms": 4673,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {
+    "unsat": 1
+  },
+  "patch_apply_failures": 0,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "20c75f12",
+        "task_id": "scikit-learn__scikit-learn-13439",
+        "iteration": 0,
+        "raw_text": "Looking at the bug report, the issue is that `Pipeline` doesn't implement `__len__`, which is needed to support `len(pipe)` and operations like `pipe[:len(pipe)]`.\n\nThe fix is straightforward - we need to add a `__len__` method to the `Pipeline` class that returns the number of steps in the pipeline.\n\nLet me find and examine the Pipeline class implementation:\n\n```python\n# sklearn/pipeline.py\nclass Pipeline(BaseEstimator, MetaEstimatorMixin):\n    # ... existing code ...\n```\n\nThe `Pipeline` class stores its steps in `self.steps`, which is a list of tuples (name, estimator). The `__len__` method should return the length of this list.\n\n```diff\n--- a/sklearn/pipeline.py\n+++ b/sklearn/pipeline.py\n@@ -135,6 +135,9 @@ class Pipeline(BaseEstimator, MetaEstimatorMixin):\n     def __getitem__(self, ind):\n         \"\"\"Returns a sub-pipeline or a single estimator in the pipeline\n \n+    def __len__(self):\n+        return len(self.steps)\n+\n     Parameters\n         ----------\n         ind : int, slice, str or None\n\n```\n\nWait, let me reconsider the placement. The `__getitem__` method already exists. I need to add `__len__` near it. Let me provide the correct diff:\n\n```diff\n--- a/sklearn/pipeline.py\n+++ b/sklearn/pipeline.py\n@@ -134,6 +134,9 @@ class Pipeline(BaseEstimator, MetaEstimatorMixin):\n \n     def __getitem__(self, ind):\n         \"\"\"Returns a sub-pipeline or a single estimator in the pipeline\n+\n+    def __len__(self):\n+        return len(self.steps)\n \n         Parameters\n         ----------\n\n```\n\nActually, that's still not right. Let me look at the proper location more carefully. The `__len__` method should be added as a separate method. Here's the correct patch:\n\n```diff\n--- a/sklearn/pipeline.py\n+++ b/sklearn/pipeline.py\n@@ -133,6 +133,9 @@ class Pipeline(BaseEstimator, MetaEstimatorMixin):\n         \"\"\"\n         return self.steps[-1][1]\n \n+    def __len__(self):\n+        return len(self.steps)\n+\n     def __getitem__(self, ind):\n         \"\"\"Returns a sub-pipeline or a single estimator in the pipeline\n \n\n```",
+        "diff": "--- a/sklearn/pipeline.py\n+++ b/sklearn/pipeline.py\n@@ -133,5 +133,8 @@ class Pipeline(BaseEstimator, MetaEstimatorMixin):\n         \"\"\"\n         return self.steps[-1][1]\n \n+    def __len__(self):\n+        return len(self.steps)\n+\n     def __getitem__(self, ind):\n         \"\"\"Returns a sub-pipeline or a single estimator in the pipeline\n",
+        "target_files": [
+          "sklearn/pipeline.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 6758,
+        "completion_tokens": 607
+      },
+      "program_slice": {
+        "schema_version": "0.1.0",
+        "slice_id": "83c06fff",
+        "task_id": "scikit-learn__scikit-learn-13439",
+        "iteration": 0,
+        "target_functions": [
+          "get_params"
+        ],
+        "modified_nodes": [
+          "sklearn/pipeline.py::get_params"
+        ],
+        "affected_variables": [
+          "deep",
+          "self"
+        ],
+        "path_conditions": [],
+        "related_tests": [
+          "sklearn/pipeline.py"
+        ],
+        "source_snippets": {
+          "sklearn/pipeline.py::get_params": "def get_params(self, deep=True):\n    \"\"\"Get parameters for this estimator.\n\ndef __len__(self):\n    return len(self.steps)\n\n    Parameters\n    ----------\n    deep : boolean, optional\n        If True, will return the parameters for this estimator and\n        contained subobjects that are estimators.\n\n    Returns\n    -------\n    params : mapping of string to any\n        Parameter names mapped to their values.\n    \"\"\"\n    return self._get_params('steps', deep=deep)"
+        }
+      },
+      "solver_result": {
+        "schema_version": "0.1.0",
+        "solver_result_id": "5f6da4e5",
+        "task_id": "scikit-learn__scikit-learn-13439",
+        "iteration": 0,
+        "status": "unsat",
+        "model": null,
+        "violated_property": null,
+        "solver_time_ms": 0,
+        "error": null
+      },
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 4673
+    }
+  ]
+}

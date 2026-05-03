@@ -1,0 +1,38 @@
+{
+  "schema_version": "0.1.0",
+  "task_id": "sympy__sympy-11618",
+  "repo": "sympy/sympy",
+  "repo_commit": "360290c4c401e386db60723ddb0109ed499c9f6e",
+  "repo_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/workspaces/sympy__sympy-11618/repo",
+  "bug_description": "distance calculation wrong\n``` python\n>>> Point(2,0).distance(Point(1,0,2))\n1\n```\n\nThe 3rd dimension is being ignored when the Points are zipped together to calculate the distance so `sqrt((2-1)**2 + (0-0)**2)` is being computed instead of `sqrt(5)`.\n\n",
+  "failing_tests": [
+    "test_issue_11617"
+  ],
+  "execution_trace": [],
+  "oracle": {
+    "type": "ground_truth",
+    "spec": {
+      "gold_patch": "diff --git a/sympy/geometry/point.py b/sympy/geometry/point.py\n--- a/sympy/geometry/point.py\n+++ b/sympy/geometry/point.py\n@@ -266,6 +266,20 @@ def distance(self, p):\n         sqrt(x**2 + y**2)\n \n         \"\"\"\n+        if type(p) is not type(self):\n+            if len(p) == len(self):\n+                return sqrt(sum([(a - b)**2 for a, b in zip(\n+                    self.args, p.args if isinstance(p, Point) else p)]))\n+            else:\n+                p1 = [0] * max(len(p), len(self))\n+                p2 = p.args if len(p.args) > len(self.args) else self.args\n+\n+                for i in range(min(len(p), len(self))):\n+                    p1[i] = p.args[i] if len(p) < len(self) else self.args[i]\n+\n+                return sqrt(sum([(a - b)**2 for a, b in zip(\n+                    p1, p2)]))\n+\n         return sqrt(sum([(a - b)**2 for a, b in zip(\n             self.args, p.args if isinstance(p, Point) else p)]))\n \n",
+      "test_patch": "diff --git a/sympy/geometry/tests/test_point.py b/sympy/geometry/tests/test_point.py\n--- a/sympy/geometry/tests/test_point.py\n+++ b/sympy/geometry/tests/test_point.py\n@@ -243,6 +243,11 @@ def test_issue_9214():\n \n     assert Point3D.are_collinear(p1, p2, p3) is False\n \n+def test_issue_11617():\n+    p1 = Point3D(1,0,2)\n+    p2 = Point2D(2,0)\n+\n+    assert p1.distance(p2) == sqrt(5)\n \n def test_transform():\n     p = Point(1, 1)\n"
+    }
+  },
+  "metadata": {
+    "dataset": "SWE-bench Verified",
+    "difficulty": "15 min - 1 hour",
+    "tags": [
+      "logic-heavy",
+      "multi_conditional_reasoning_bug"
+    ],
+    "logic_heavy": true,
+    "bug_type": "multi_conditional_reasoning_bug",
+    "repo_name": "sympy",
+    "status": "valid",
+    "subset": "final_eval",
+    "preprocessing_timestamp": "2026-05-01T16:10:31.451822+00:00",
+    "bug_report_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/final_eval/sympy__sympy-11618/bug_report.txt",
+    "failing_tests_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/final_eval/sympy__sympy-11618/failing_tests.json",
+    "oracle_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/final_eval/sympy__sympy-11618/oracle.json",
+    "repo_index_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/.cache/602aa1b08679c1a0.json",
+    "raw_fields_path": "/Users/jaredbuabeng/Docs/Coding/Spring2026/CS-527-Symbiotic-SWE/data/prepared/prepared/final_eval/sympy__sympy-11618/raw_fields.json"
+  }
+}

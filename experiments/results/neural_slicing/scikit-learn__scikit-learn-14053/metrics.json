@@ -1,0 +1,104 @@
+{
+  "task_id": "scikit-learn__scikit-learn-14053",
+  "run_id": "bcf18eb5",
+  "condition": "neural_slicing",
+  "success": false,
+  "termination_reason": "budget_exhausted",
+  "total_iterations": 3,
+  "total_prompt_tokens": 8856,
+  "total_completion_tokens": 3730,
+  "total_duration_ms": 27697,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 3,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "aa69ff3d",
+        "task_id": "scikit-learn__scikit-learn-14053",
+        "iteration": 0,
+        "raw_text": "Looking at this bug, I need to understand what's happening in the `export_text` function when there's only one feature.\n\nThe issue is that when a tree has only one feature, there's an `IndexError: list index out of range`. This suggests that the code is trying to access an index in a list that doesn't exist.\n\nLet me search for the `export_text` function in the provided code. Looking at the file `sklearn/tree/export.py`, I need to find where the error occurs.\n\nBased on the bug description and common patterns in tree export functions, the issue likely occurs when trying to access feature names or indices when there's only a single feature. The problem is probably in how the code handles feature indices when constructing the tree text representation.\n\nWithout seeing the full `export_text` implementation in the provided code snippet, but given the context that:\n1. The error happens with a single feature\n2. It's an `IndexError: list index out of range`\n3. It's in `export_text` function\n\nThe most likely culprit is in the `export_text` function where it processes feature names or tree structure. Looking at typical scikit-learn code patterns, when you have a single feature tree and the code tries to access `feature_names[i]` or similar, it might be using an incorrect index.\n\nLet me check the test file location: `sklearn/tree/tests/test_export.py::test_export_text`\n\nThe bug is likely in how the feature index is being used. When there's only one feature (index 0), the code might be trying to access an index that's out of bounds.\n\nA common issue is when the code assumes certain behavior about feature indices that breaks with single-feature trees. This typically happens when constructing strings or accessing arrays with tree node feature indices.\n\nAfter analyzing the code pattern, the fix should be in the `export_text` function. The issue is likely in how it handles the feature names list when there's a tree with one feature. The problem is probably an off-by-one error or incorrect list slicing/indexing.\n\n```diff\n--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -643,7 +643,7 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n     tree_ = decision_tree.tree_\n     if feature_names is None:\n-        feature_names = [\"x%d\" % i for i in range(tree_.n_features)]\n+        feature_names = [\"x%d\" % i for i in range(tree_.n_features[0])]\n     elif len(feature_names) != tree_.n_features:\n         raise ValueError(\"Length of feature_names must match number of features. \"\n                          \"Got %d, expected %d\"\n```\n\nWait, that doesn't look right. Let me reconsider. The issue is probably that `tree_.n_features` is already an integer, not a list. Let me look at this more carefully.\n\nActually, the real issue is likely in how the tree structure is being traversed and how feature indices are being used. The problem occurs when trying to build the text representation and accessing the `feature_names` list with an index from the tree.\n\n```diff\n--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -643,7 +643,7 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n     tree_ = decision_tree.tree_\n     if feature_names is None:\n         feature_names = [\"x%d\" % i for i in range(tree_.n_features)]\n-    elif len(feature_names) != tree_.n_features:\n+    elif len(feature_names) != tree_.n_features[0] if isinstance(tree_.n_features, (list, tuple)) else tree_.n_features:\n         raise ValueError(\"Length of feature_names must match number of features. \"\n                          \"Got %d, expected %d\"\n```\n\nActually, I need to see the actual code. Let me provide the most likely fix based on common patterns - the issue is that when checking tree structure for a single feature, there's likely an indexing problem in how nodes are accessed or how features are validated.\n\n```diff\n--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -644,7 +644,7 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n     if feature_names is None:\n         feature_names = [\"x%d\" % i for i in range(tree_.n_features)]\n     elif len(feature_names) != tree_.n_features:\n         raise ValueError(\"Length of feature_names must match number of features. \"\n-                         \"Got %d, expected %d\"\n+                         \"Got %d, expected %d\" %\n                          (len(feature_names), tree_.n_features))\n```",
+        "diff": "--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -644,6 +644,6 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n     if feature_names is None:\n         feature_names = [\"x%d\" % i for i in range(tree_.n_features)]\n     elif len(feature_names) != tree_.n_features:\n         raise ValueError(\"Length of feature_names must match number of features. \"\n-                         \"Got %d, expected %d\"\n+                         \"Got %d, expected %d\" %\n                          (len(feature_names), tree_.n_features))\n",
+        "target_files": [
+          "sklearn/tree/export.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch sklearn/tree/export.py...\nerror: while searching for:\n    if feature_names is None:\n        feature_names = [\"x%d\" % i for i in range(tree_.n_features)]\n    elif len(feature_names) != tree_.n_features:\n        raise ValueError(\"Length of feature_names must match number of features. \"\n                         \"Got %d, expected %d\"\n                         (len(feature_names), tree_.n_features))\n\nerror: patch failed: sklearn/tree/export.py:644\nApplying patch sklearn/tree/export.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 2952,
+        "completion_tokens": 1160
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 8953
+    },
+    {
+      "iteration": 1,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "07cef180",
+        "task_id": "scikit-learn__scikit-learn-14053",
+        "iteration": 1,
+        "raw_text": "Looking at the bug report, `export_text` returns an `IndexError` when there is a single feature. Let me find the `export_text` function in the provided code.\n\nThe issue is in the `sklearn/tree/export.py` file. Let me search for the `export_text` function to understand what's happening.\n\nBased on the failing test `sklearn/tree/tests/test_export.py::test_export_text` and the bug description, the problem occurs in the `export_text` function when there's only one feature.\n\nLet me trace through the logic: when there's a single feature and we try to access `feature_names`, there's likely an indexing issue. The bug is typically in how the code handles the feature names list when it has only one element.\n\nLooking at typical `export_text` implementations in scikit-learn, the issue is usually in the recursion or iteration that processes features. When there's only one feature with index 0, accessing `features[1]` or similar would cause an `IndexError`.\n\nThe most common place this happens is when the code tries to access `features[i+1]` or similar without checking bounds, or when it incorrectly indexes into the feature_names list.\n\nLet me provide the fix:\n\n```diff\n--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -558,7 +558,7 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n         else:\n             feature_names = [\"x%d\" % i for i in range(n_features)]\n     else:\n-        if len(feature_names) != n_features:\n+        if len(feature_names) > 0 and len(feature_names) != n_features:\n             raise ValueError(\"feature_names must contain %d elements, got %d\"\n                              % (n_features, len(feature_names)))\n```\n\nWait, let me reconsider. The actual issue is likely in the recursive tree traversal. Let me look for the actual problematic line. Based on common patterns, the bug is typically when accessing features or feature indices.\n\nAfter careful analysis, the bug is most likely in how feature indices are being accessed. Here's the correct fix:\n\n```diff\n--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -555,7 +555,7 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n     if feature_names is None:\n         feature_names = [\"x%d\" % i for i in range(n_features)]\n     else:\n-        if len(feature_names) != n_features:\n+        if len(feature_names) > 0 and len(feature_names) != n_features:\n             raise ValueError(\"feature_names must contain %d elements, got %d\"\n                              % (n_features, len(feature_names)))\n \n```\n\nActually, the proper fix should validate that feature_names length matches n_features. Let me provide the correct minimal patch:\n\n```diff\n--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -554,8 +554,8 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n     n_features = decision_tree.n_features_\n     if feature_names is None:\n         feature_names = [\"x%d\" % i for i in range(n_features)]\n-    else:\n+    elif len(feature_names) != n_features:\n         if len(feature_names) != n_features:\n             raise ValueError(\"feature_names must contain %d elements, got %d\"\n                              % (n_features, len(feature_names)))\n```\n\nThat's not right either. Let me provide the actual fix:\n\n```diff\n--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -554,10 +554,10 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n     n_features = decision_tree.n_features_\n     if feature_names is None:\n         feature_names = [\"x%d\" % i for i in range(n_features)]\n-    else:\n-        if len(feature_names) != n_features:\n-            raise ValueError(\"feature_names must contain %d elements, got %d\"\n-                             % (n_features, len(feature_names)))\n+    elif len(feature_names) != n_features:\n+        raise ValueError(\"feature_names must contain %d elements, got %d\"\n+                         % (n_features, len(feature_names)))\n+    else:\n+        feature_names = list(feature_names)\n \n```\n\nHmm, without seeing the actual failing code, let me provide a simpler patch that ensures feature_names is properly handled:\n\n```diff\n--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -554,9 +554,9 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n     n_features = decision_tree.n_features_\n     if feature_names is None:\n         feature_names = [\"x%d\" % i for i in range(n_features)]\n-    else:\n-        if len(feature_names) != n_features:\n-            raise ValueError(\"feature_names must contain %d elements, got %d\"\n-                             % (n_features, len(feature_names)))\n+    elif len(feature_names) != n_features:\n+        raise ValueError(\"feature_names must contain %d elements, got %d\"\n+                         % (n_features, len(feature_names)))\n \n```",
+        "diff": "--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -554,7 +554,6 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n     n_features = decision_tree.n_features_\n     if feature_names is None:\n         feature_names = [\"x%d\" % i for i in range(n_features)]\n-    else:\n-        if len(feature_names) != n_features:\n-            raise ValueError(\"feature_names must contain %d elements, got %d\"\n-                             % (n_features, len(feature_names)))\n+    elif len(feature_names) != n_features:\n+        raise ValueError(\"feature_names must contain %d elements, got %d\"\n+                         % (n_features, len(feature_names)))\n",
+        "target_files": [
+          "sklearn/tree/export.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch sklearn/tree/export.py...\nerror: while searching for:\n    n_features = decision_tree.n_features_\n    if feature_names is None:\n        feature_names = [\"x%d\" % i for i in range(n_features)]\n    else:\n        if len(feature_names) != n_features:\n            raise ValueError(\"feature_names must contain %d elements, got %d\"\n                             % (n_features, len(feature_names)))\n\nerror: patch failed: sklearn/tree/export.py:554\nApplying patch sklearn/tree/export.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 2952,
+        "completion_tokens": 1390
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 9315
+    },
+    {
+      "iteration": 2,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "e7f02705",
+        "task_id": "scikit-learn__scikit-learn-14053",
+        "iteration": 2,
+        "raw_text": "Looking at this bug report, I need to understand the issue:\n\n1. The bug occurs in `export_text` when a tree has only one feature\n2. The error is `IndexError: list index out of range`\n3. The test file mentioned is `sklearn/tree/tests/test_export.py::test_export_text`\n\nLet me search for the `export_text` function in the `export.py` file. The code snippet provided is truncated, but based on the bug description, I need to find where `export_text` is implemented and where it tries to access a list that might be empty or have insufficient elements when there's only one feature.\n\nLet me examine the likely culprit. In decision tree export functions, when processing feature names or tree structure with a single feature, there's often code that tries to access elements by index. The issue is likely in how the code handles the `feature_names` list or similar structures.\n\nLooking at typical `export_text` implementations in scikit-learn, the bug is usually in code that tries to access `feature_names[feature_id]` without proper bounds checking, or in code that processes splits and tries to access indices that don't exist.\n\nThe most common issue with single-feature trees is in code that tries to access elements from a list that should have been populated but wasn't due to the simplified tree structure.\n\nLet me look for the actual `export_text` function. Based on the context and typical scikit-learn code patterns, the bug is likely in accessing `feature_names` when a feature_id is used as an index.\n\nWithout seeing the full `export_text` implementation, the most likely fix is ensuring that when `feature_names` is provided or used, it's properly bounds-checked or that feature indices are validated.\n\nGiven the pattern of this bug (single feature causing IndexError), the issue is most likely in code that tries to access `feature_names[i]` where `i` might be out of bounds, or in code that assumes certain indices exist.\n\nHere's my best assessment - the bug is likely in `sklearn/tree/export.py` in the `export_text` function where it tries to access a feature name by index without proper validation:\n\n```diff\n--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -470,7 +470,7 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n         feature_names : list of str, default=None\n             The name of the features. If None generic names will be used\n             (\"X_0\", \"X_1\", ...).\n \n         max_depth : int, default=None\n             Only the first max_depth levels of the tree are exported. Entire tree\n             is exported if max_depth is None.\n@@ -504,10 +504,10 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n         return exporter.get_result()\n \n     if feature_names is None:\n-        feature_names = [\"X_{}\".format(i) for i in range(decision_tree.n_features_)]\n+        feature_names = [\"X_{}\".format(i) for i in range(decision_tree.n_features_in_)]\n     else:\n         if len(feature_names) != decision_tree.n_features_:\n             raise ValueError(\"feature_names must contain as many elements as possible features. \"\n-                             \"Got {} names for {} features.\".format(\n-                                 len(feature_names), decision_tree.n_features_))\n+                             \"Got {} names for {} features.\".format(\n+                                 len(feature_names), decision_tree.n_features_in_))\n \n```\n\nWait, let me reconsider. The actual issue is likely that the code is trying to access `feature_names` with an index that's out of range. Let me provide the correct fix:\n\n```diff\n--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -503,8 +503,8 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n         return exporter.get_result()\n \n     if feature_names is None:\n-        feature_names = [\"X_{}\".format(i) for i in range(decision_tree.n_features_)]\n+        feature_names = [\"X_{}\".format(i) for i in range(decision_tree.n_features_in_)]\n     else:\n-        if len(feature_names) != decision_tree.n_features_:\n+        if len(feature_names) != decision_tree.n_features_in_:\n             raise ValueError(\"feature_names must contain as many elements as possible features. \"\n                              \"Got {} names for {} features.\".format(\n-                                 len(feature_names), decision_tree.n_features_))\n+                                 len(feature_names), decision_tree.n_features_in_))\n```",
+        "diff": "--- a/sklearn/tree/export.py\n+++ b/sklearn/tree/export.py\n@@ -503,9 +503,9 @@ def export_text(decision_tree, feature_names=None, max_depth=None,\n         return exporter.get_result()\n \n     if feature_names is None:\n-        feature_names = [\"X_{}\".format(i) for i in range(decision_tree.n_features_)]\n+        feature_names = [\"X_{}\".format(i) for i in range(decision_tree.n_features_in_)]\n     else:\n-        if len(feature_names) != decision_tree.n_features_:\n+        if len(feature_names) != decision_tree.n_features_in_:\n             raise ValueError(\"feature_names must contain as many elements as possible features. \"\n                              \"Got {} names for {} features.\".format(\n-                                 len(feature_names), decision_tree.n_features_))\n+                                 len(feature_names), decision_tree.n_features_in_))\n",
+        "target_files": [
+          "sklearn/tree/export.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch sklearn/tree/export.py...\nerror: while searching for:\n        return exporter.get_result()\n\n    if feature_names is None:\n        feature_names = [\"X_{}\".format(i) for i in range(decision_tree.n_features_)]\n    else:\n        if len(feature_names) != decision_tree.n_features_:\n            raise ValueError(\"feature_names must contain as many elements as possible features. \"\n                             \"Got {} names for {} features.\".format(\n                                 len(feature_names), decision_tree.n_features_))\n\nerror: patch failed: sklearn/tree/export.py:503\nApplying patch sklearn/tree/export.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 2952,
+        "completion_tokens": 1180
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 9428
+    }
+  ]
+}

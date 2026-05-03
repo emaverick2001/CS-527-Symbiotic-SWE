@@ -1,0 +1,73 @@
+{
+  "task_id": "scikit-learn__scikit-learn-12585",
+  "run_id": "3ed79008",
+  "condition": "neural_only",
+  "success": true,
+  "termination_reason": "neural_only_patch_applied",
+  "total_iterations": 2,
+  "total_prompt_tokens": 3088,
+  "total_completion_tokens": 942,
+  "total_duration_ms": 8804,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 1,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "71ff197d",
+        "task_id": "scikit-learn__scikit-learn-12585",
+        "iteration": 0,
+        "raw_text": "Looking at this bug, I need to understand the issue:\n\n1. The `clone` function is being called with an estimator that has a parameter set to an estimator class (not instance)\n2. When `clone` tries to recursively clone this parameter, it treats the class as if it were an instance and calls `get_params()` on it\n3. Since it's a class, `get_params()` fails because it's missing the `self` argument\n\nThe fix suggested is to check `isinstance(estimator, type)` to identify when something is a class rather than an instance.\n\nLet me find the relevant code in `sklearn/base.py`. Based on the error traceback showing line 51 and 60, I need to look at the `clone` function:\n\n```python\ndef clone(estimator, safe=True):\n    # ... code ...\n    elif not hasattr(estimator, 'get_params'):\n        # handle non-estimator types\n```\n\nThe fix is to add `or isinstance(estimator, type)` to the condition that checks if something should NOT be recursively cloned. If it's a type/class, we should return it as-is rather than trying to call `get_params()` on it.\n\nLet me trace through the logic:\n- Line 51 would be checking `if not hasattr(estimator, 'get_params')`\n- We need to also treat classes (types) as objects that shouldn't be processed as estimators\n- So the condition should be: `if not hasattr(estimator, 'get_params') or isinstance(estimator, type):`\n\nThis way, when we encounter an estimator class (a type), we return it directly without trying to call `get_params()` on it.\n\n```diff\n--- a/sklearn/base.py\n+++ b/sklearn/base.py\n@@ -48,7 +48,7 @@ def clone(estimator, safe=True):\n     new_object_params = {}\n     for name, param in estimator_params:\n         if param is None:\n             new_object_params[name] = None\n-        elif not hasattr(param, 'get_params'):\n+        elif not hasattr(param, 'get_params') or isinstance(param, type):\n             new_object_params[name] = param\n         else:\n             new_object_params[name] = clone(param, safe=False)\n```",
+        "diff": "--- a/sklearn/base.py\n+++ b/sklearn/base.py\n@@ -48,8 +48,8 @@ def clone(estimator, safe=True):\n     new_object_params = {}\n     for name, param in estimator_params:\n         if param is None:\n             new_object_params[name] = None\n-        elif not hasattr(param, 'get_params'):\n+        elif not hasattr(param, 'get_params') or isinstance(param, type):\n             new_object_params[name] = param\n         else:\n             new_object_params[name] = clone(param, safe=False)\n",
+        "target_files": [
+          "sklearn/base.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch sklearn/base.py...\nerror: while searching for:\n    new_object_params = {}\n    for name, param in estimator_params:\n        if param is None:\n            new_object_params[name] = None\n        elif not hasattr(param, 'get_params'):\n            new_object_params[name] = param\n        else:\n            new_object_params[name] = clone(param, safe=False)\n\nerror: patch failed: sklearn/base.py:48\nApplying patch sklearn/base.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 1544,
+        "completion_tokens": 561
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 5343
+    },
+    {
+      "iteration": 1,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "cc814fd1",
+        "task_id": "scikit-learn__scikit-learn-12585",
+        "iteration": 1,
+        "raw_text": "Looking at this bug report, the issue is that `clone()` in scikit-learn fails when a parameter is an estimator class (type) rather than an instance. The function tries to call `get_params()` on the class, which fails because it's an unbound method.\n\nThe suggested fix is to check if the parameter is a type (class) and if so, treat it as a non-estimator parameter that should be left as-is.\n\nLet me examine the relevant code in `sklearn/base.py` around line 51:\n\nThe `clone` function needs to be modified to handle the case where a parameter is a type/class. The fix should check if `estimator` is a type using `isinstance(estimator, type)` before trying to call `get_params()` on it.\n\n```diff\n--- a/sklearn/base.py\n+++ b/sklearn/base.py\n@@ -48,7 +48,7 @@ def clone(estimator, safe=True):\n             new_object_params[name] = clone(param, safe=False)\n         else:\n             new_object_params[name] = param\n-    elif not hasattr(estimator, 'get_params'):\n+    elif not hasattr(estimator, 'get_params') or isinstance(estimator, type):\n         return estimator\n     else:\n         for name, param in estimator.get_params(deep=False).items():\n```\n\nThis minimal change ensures that if `estimator` is a type (class), it's treated as a non-estimator object and returned as-is, rather than attempting to call `get_params()` on it.",
+        "diff": "--- a/sklearn/base.py\n+++ b/sklearn/base.py\n@@ -48,7 +48,7 @@ def clone(estimator, safe=True):\n             new_object_params[name] = clone(param, safe=False)\n         else:\n             new_object_params[name] = param\n-    elif not hasattr(estimator, 'get_params'):\n+    elif not hasattr(estimator, 'get_params') or isinstance(estimator, type):\n         return estimator\n     else:\n         for name, param in estimator.get_params(deep=False).items():\n",
+        "target_files": [
+          "sklearn/base.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 1544,
+        "completion_tokens": 381
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 3461
+    }
+  ]
+}

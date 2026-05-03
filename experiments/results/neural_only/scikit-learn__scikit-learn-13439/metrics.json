@@ -1,0 +1,44 @@
+{
+  "task_id": "scikit-learn__scikit-learn-13439",
+  "run_id": "4af525bf",
+  "condition": "neural_only",
+  "success": true,
+  "termination_reason": "neural_only_patch_applied",
+  "total_iterations": 1,
+  "total_prompt_tokens": 6758,
+  "total_completion_tokens": 575,
+  "total_duration_ms": 4504,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 0,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "cee1e9c5",
+        "task_id": "scikit-learn__scikit-learn-13439",
+        "iteration": 0,
+        "raw_text": "Looking at the bug report, the issue is that `Pipeline` doesn't implement `__len__`, which causes `len(pipe)` to raise an error. The user wants to be able to call `len()` on a Pipeline object, and based on the context, a Pipeline should return the number of steps it contains.\n\nLet me examine the relevant code structure. A Pipeline is a sequence of (name, estimator) tuples, so `len(pipe)` should return the number of steps.\n\nThe fix is straightforward: add a `__len__` method to the Pipeline class that returns the number of steps.\n\n```diff\n--- a/sklearn/pipeline.py\n+++ b/sklearn/pipeline.py\n@@ -145,6 +145,9 @@ class Pipeline(_BaseComposition):\n     def __getitem__(self, index):\n         return self.steps[index]\n \n+    def __len__(self):\n+        return len(self.steps)\n+\n     def set_params(self, **params):\n         \"\"\"Set the parameters of this estimator.\n \n```\n\nWait, I need to find the actual Pipeline class. Let me reconsider - the bug is about indexing support with `pipe[:len(pipe)]`. The Pipeline class should have a `__len__` method to support the `len()` function.\n\n```diff\n--- a/sklearn/pipeline.py\n+++ b/sklearn/pipeline.py\n@@ -145,6 +145,9 @@ class Pipeline(_BaseComposition):\n     def __getitem__(self, index):\n         return self.steps[index]\n+\n+    def __len__(self):\n+        return len(self.steps)\n \n     def set_params(self, **params):\n         \"\"\"Set the parameters of this estimator.\n```\n\nActually, I should check the exact location. Since this is a standard sklearn issue and the method `__getitem__` exists, the `__len__` should be added right after it in the Pipeline class.\n\n```diff\n--- a/sklearn/pipeline.py\n+++ b/sklearn/pipeline.py\n@@ -145,6 +145,9 @@ class Pipeline(_BaseComposition):\n     def __getitem__(self, index):\n         return self.steps[index]\n \n+    def __len__(self):\n+        return len(self.steps)\n+\n     def set_params(self, **params):\n         \"\"\"Set the parameters of this estimator.\n \n```",
+        "diff": "--- a/sklearn/pipeline.py\n+++ b/sklearn/pipeline.py\n@@ -145,5 +145,8 @@ class Pipeline(_BaseComposition):\n     def __getitem__(self, index):\n         return self.steps[index]\n \n+    def __len__(self):\n+        return len(self.steps)\n+\n     def set_params(self, **params):\n         \"\"\"Set the parameters of this estimator.\n",
+        "target_files": [
+          "sklearn/pipeline.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 6758,
+        "completion_tokens": 575
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 4504
+    }
+  ]
+}

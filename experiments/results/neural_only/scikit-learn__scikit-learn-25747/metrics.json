@@ -1,0 +1,44 @@
+{
+  "task_id": "scikit-learn__scikit-learn-25747",
+  "run_id": "b726ba00",
+  "condition": "neural_only",
+  "success": true,
+  "termination_reason": "neural_only_patch_applied",
+  "total_iterations": 1,
+  "total_prompt_tokens": 5395,
+  "total_completion_tokens": 635,
+  "total_duration_ms": 241315,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 0,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "49d77798",
+        "task_id": "scikit-learn__scikit-learn-25747",
+        "iteration": 0,
+        "raw_text": "Looking at this bug, the issue is in `FeatureUnion.transform()` when `transform_output=\"pandas\"` is set and a transformer returns data with a different number of rows (due to aggregation).\n\nThe problem occurs in `_wrap_in_pandas_container()` in `sklearn/utils/_set_output.py`. When a transformer aggregates data and returns fewer rows, the wrapping function tries to assign the original input's index (which has more rows) to the aggregated output, causing a shape mismatch.\n\nThe key insight is that when a transformer returns data that has been aggregated (different number of rows than input), we should not force the original index onto it. We should only preserve the index when the output has the same number of rows as the input.\n\nLet me trace through the code:\n\n1. `FeatureUnion.fit_transform()` calls each transformer's `transform()`\n2. The output wrapper in `_set_output.py` tries to wrap the result\n3. For `MyTransformer`, it returns aggregated data (4 rows instead of 96)\n4. `_wrap_in_pandas_container()` tries to set the original index (96 rows) on the aggregated data (4 rows), causing the error\n\nThe fix should be in `_wrap_in_pandas_container()` to check if the index length matches the data length before setting it:\n\n```diff\n--- a/sklearn/utils/_set_output.py\n+++ b/sklearn/utils/_set_output.py\n@@ -55,7 +55,8 @@ def _wrap_in_pandas_container(\n     if isinstance(data_to_wrap, pd.DataFrame):\n         if columns is not None:\n             data_to_wrap.columns = columns\n-        if index is not None:\n+        if index is not None and len(index) == len(data_to_wrap):\n             data_to_wrap.index = index\n         return data_to_wrap\n \n```\n\nThis ensures that we only set the index if its length matches the data's length, preventing the error when transformers aggregate or change the number of rows.\n\n```diff\n--- a/sklearn/utils/_set_output.py\n+++ b/sklearn/utils/_set_output.py\n@@ -55,7 +55,7 @@ def _wrap_in_pandas_container(\n     if isinstance(data_to_wrap, pd.DataFrame):\n         if columns is not None:\n             data_to_wrap.columns = columns\n-        if index is not None:\n+        if index is not None and len(index) == len(data_to_wrap):\n             data_to_wrap.index = index\n         return data_to_wrap\n \n```",
+        "diff": "--- a/sklearn/utils/_set_output.py\n+++ b/sklearn/utils/_set_output.py\n@@ -55,6 +55,6 @@ def _wrap_in_pandas_container(\n     if isinstance(data_to_wrap, pd.DataFrame):\n         if columns is not None:\n             data_to_wrap.columns = columns\n-        if index is not None:\n+        if index is not None and len(index) == len(data_to_wrap):\n             data_to_wrap.index = index\n         return data_to_wrap\n",
+        "target_files": [
+          "sklearn/utils/_set_output.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 5395,
+        "completion_tokens": 635
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 241315
+    }
+  ]
+}

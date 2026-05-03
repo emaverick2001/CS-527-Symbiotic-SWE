@@ -1,0 +1,4 @@
+[
+  "lib/matplotlib/tests/test_offsetbox.py::test_packers[bottom]",
+  "lib/matplotlib/tests/test_offsetbox.py::test_packers[top]"
+]

@@ -1,0 +1,104 @@
+{
+  "task_id": "matplotlib__matplotlib-26466",
+  "run_id": "c5505ae0",
+  "condition": "neural_cegf",
+  "success": false,
+  "termination_reason": "budget_exhausted",
+  "total_iterations": 3,
+  "total_prompt_tokens": 6927,
+  "total_completion_tokens": 3635,
+  "total_duration_ms": 28628,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 3,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "f3dbaf63",
+        "task_id": "matplotlib__matplotlib-26466",
+        "iteration": 0,
+        "raw_text": "Looking at this bug, the issue is that when an array is passed as the `xy` parameter to `annotate()`, the array reference is stored directly instead of being copied. This means that modifications to the original array later affect the annotation.\n\nLet me search for the `annotate` method in the matplotlib codebase. The bug is in how the `xy` and `xytext` parameters are handled - they need to be copied to avoid external modifications.\n\nBased on the bug report and the failing test `test_annotate_and_offsetfrom_copy_input`, I need to find where `annotate` is implemented and ensure it copies array inputs.\n\nThe `annotate` method is typically in `lib/matplotlib/axes/_base.py` or `lib/matplotlib/text.py`. Looking at the test name, it's likely in the Axes class's annotate method.\n\nThe fix should copy the `xy` and `xytext` parameters if they are array-like to prevent external modifications from affecting the annotation.\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -1,6 +1,7 @@\n \"\"\"\n Axes class and helper functions.\n \"\"\"\n+import numpy as np\n \n # This import must be before any relative imports of other matplotlib modules,\n # so matplotlib.cbook can be imported by matplotlib and matplotlib.axes.\n@@ -2000,6 +2001,14 @@ class Axes(_AxesBase):\n         # Guaranteed to have 2 elements after this.\n         if len(xy) == 2:\n             xy = np.asarray(xy).ravel()\n+        else:\n+            # Make a copy to prevent external modification\n+            xy = np.array(xy)\n+\n+        if isinstance(xytext, (list, tuple, np.ndarray)):\n+            xytext = np.asarray(xytext)\n+            if xytext.size == len(xytext.flat):\n+                xytext = np.array(xytext)\n \n         # Get the xytext value\n         if xytext is None:\n```\n\nWait, let me reconsider. I need to look at the actual annotate implementation more carefully. The issue is that `xy` (and potentially `xytext`) need to be copied when they're array-like.\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -2000,8 +2000,12 @@ class Axes(_AxesBase):\n         # Guaranteed to have 2 elements after this.\n         if len(xy) == 2:\n             xy = np.asarray(xy).ravel()\n+        else:\n+            xy = np.asarray(xy)\n         \n+        # Ensure xy is copied to prevent external modifications\n+        xy = np.array(xy)\n+        \n         # Get the xytext value\n         if xytext is None:\n             xytext = self.transAxes\n@@ -2009,6 +2013,8 @@ class Axes(_AxesBase):\n             if len(xytext) == 2:\n                 xytext = np.asarray(xytext).ravel()\n+        else:\n+            xytext = np.asarray(xytext)\n+        \n+        xytext = np.array(xytext)\n         \n         # Create Annotation object and add it to the list of artists\n```\n\nLet me provide a more precise fix based on standard matplotlib structure:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -1999,12 +1999,16 @@ class Axes(_AxesBase):\n         # Guaranteed to have 2 elements after this.\n         if len(xy) == 2:\n             xy = np.asarray(xy).ravel()\n+        xy = np.array(xy)\n         \n         # Get the xytext value\n         if xytext is None:\n             xytext = self.transAxes\n         else:\n             if len(xytext) == 2:\n                 xytext = np.asarray(xytext).ravel()\n+            else:\n+                xytext = np.asarray(xytext)\n+        xytext = np.array(xytext)\n         \n         # Create Annotation object and add it to the list of artists\n```\n\nActually, the safest minimal fix is to ensure both xy and xytext are copied when they are array-like:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -1999,6 +1999,7 @@ class Axes(_AxesBase):\n         # Guaranteed to have 2 elements after this.\n         if len(xy) == 2:\n             xy = np.asarray(xy).ravel()\n+        xy = np.array(xy)\n         \n         # Get the xytext value\n         if xytext is None:\n@@ -2007,6 +2008,7 @@ class Axes(_AxesBase):\n             if len(xytext) == 2:\n                 xytext = np.asarray(xytext).ravel()\n+            xytext = np.array(xytext)\n         \n         # Create Annotation object and add it to the list of artists\n```",
+        "diff": "--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -1999,6 +1999,7 @@ class Axes(_AxesBase):\n         # Guaranteed to have 2 elements after this.\n         if len(xy) == 2:\n             xy = np.asarray(xy).ravel()\n+        xy = np.array(xy)\n         \n         # Get the xytext value\n         if xytext is None:\n@@ -2007,4 +2008,5 @@ class Axes(_AxesBase):\n             if len(xytext) == 2:\n                 xytext = np.asarray(xytext).ravel()\n+            xytext = np.array(xytext)\n         \n         # Create Annotation object and add it to the list of artists\n",
+        "target_files": [
+          "lib/matplotlib/axes/_base.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch lib/matplotlib/axes/_base.py...\nerror: while searching for:\n        # Guaranteed to have 2 elements after this.\n        if len(xy) == 2:\n            xy = np.asarray(xy).ravel()\n        \n        # Get the xytext value\n        if xytext is None:\n\nerror: patch failed: lib/matplotlib/axes/_base.py:1999\nerror: while searching for:\n            if len(xytext) == 2:\n                xytext = np.asarray(xytext).ravel()\n        \n        # Create Annotation object and add it to the list of artists\n\nerror: patch failed: lib/matplotlib/axes/_base.py:2007\nApplying patch lib/matplotlib/axes/_base.py with 2 rejects...\nRejected hunk #1.\nRejected hunk #2."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 2309,
+        "completion_tokens": 1332
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 10627
+    },
+    {
+      "iteration": 1,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "f56dd9e0",
+        "task_id": "matplotlib__matplotlib-26466",
+        "iteration": 1,
+        "raw_text": "Looking at the bug report, the issue is that when an array is passed as the `xy` parameter to `annotate()`, the annotation keeps a reference to the original array instead of making a copy. When the array is modified later, the arrow position changes.\n\nLet me search for the `annotate` method in the matplotlib codebase. Based on the repository structure, it should be in `lib/matplotlib/axes/_base.py` or `lib/matplotlib/text.py`.\n\nThe issue is that the `xy` and `xytext` parameters need to be copied when they are array-like objects to prevent external modifications from affecting the annotation.\n\nLooking at the test name `test_annotate_and_offsetfrom_copy_input`, this suggests the fix should ensure that input arrays are copied in the `annotate` method.\n\nThe `annotate` method is typically in the `Axes` class. The fix should involve converting array-like inputs to copies to prevent this issue.\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -2881,6 +2881,7 @@ class Axes(_AxesBase):\n         if isinstance(xy, str):\n             xy = self._get_xy_arrow(xy)\n         else:\n+            xy = np.asarray(xy).copy()\n             xy = self._get_xy_arrow(xy)\n \n         if isinstance(xytext, str):\n@@ -2888,6 +2889,7 @@ class Axes(_AxesBase):\n             if xytext is None:\n                 xytext = xy\n         else:\n+            xytext = np.asarray(xytext).copy()\n             xytext = self._get_xy_arrow(xytext)\n \n         if len(args) and isinstance(args[0], str):\n```\n\nWait, let me reconsider. Looking more carefully at the code structure, I need to find where `annotate` is defined. Let me check the actual implementation.\n\nThe `annotate` method should copy the xy and xytext parameters early in the function to prevent external modifications. The most direct fix would be to convert these to arrays and copy them:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -2876,11 +2876,13 @@ class Axes(_AxesBase):\n         if isinstance(xy, str):\n             xy = self._get_xy_arrow(xy)\n         else:\n+            xy = np.asarray(xy).copy()\n             xy = self._get_xy_arrow(xy)\n \n         if isinstance(xytext, str):\n             xytext = self._get_xy_arrow(xytext)\n             if xytext is None:\n                 xytext = xy\n         else:\n+            xytext = np.asarray(xytext).copy()\n             xytext = self._get_xy_arrow(xytext)\n```\n\nActually, I need to be more careful. Let me provide the correct minimal patch:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -2876,6 +2876,7 @@ class Axes(_AxesBase):\n         if isinstance(xy, str):\n             xy = self._get_xy_arrow(xy)\n         else:\n+            xy = np.asarray(xy).copy()\n             xy = self._get_xy_arrow(xy)\n \n         if isinstance(xytext, str):\n@@ -2884,6 +2885,7 @@ class Axes(_AxesBase):\n                 xytext = xy\n         else:\n+            xytext = np.asarray(xytext).copy()\n             xytext = self._get_xy_arrow(xytext)\n \n         if len(args) and isinstance(args[0], str):\n```",
+        "diff": "--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -2876,6 +2876,7 @@ class Axes(_AxesBase):\n         if isinstance(xy, str):\n             xy = self._get_xy_arrow(xy)\n         else:\n+            xy = np.asarray(xy).copy()\n             xy = self._get_xy_arrow(xy)\n \n         if isinstance(xytext, str):\n@@ -2884,5 +2885,6 @@ class Axes(_AxesBase):\n                 xytext = xy\n         else:\n+            xytext = np.asarray(xytext).copy()\n             xytext = self._get_xy_arrow(xytext)\n \n         if len(args) and isinstance(args[0], str):\n",
+        "target_files": [
+          "lib/matplotlib/axes/_base.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch lib/matplotlib/axes/_base.py...\nerror: while searching for:\n        if isinstance(xy, str):\n            xy = self._get_xy_arrow(xy)\n        else:\n            xy = self._get_xy_arrow(xy)\n\n        if isinstance(xytext, str):\n\nerror: patch failed: lib/matplotlib/axes/_base.py:2876\nerror: while searching for:\n                xytext = xy\n        else:\n            xytext = self._get_xy_arrow(xytext)\n\n        if len(args) and isinstance(args[0], str):\n\nerror: patch failed: lib/matplotlib/axes/_base.py:2884\nApplying patch lib/matplotlib/axes/_base.py with 2 rejects...\nRejected hunk #1.\nRejected hunk #2."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 2309,
+        "completion_tokens": 956
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 7515
+    },
+    {
+      "iteration": 2,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "d963dc11",
+        "task_id": "matplotlib__matplotlib-26466",
+        "iteration": 2,
+        "raw_text": "Looking at this bug report, the issue is that when an array is passed as the `xy` parameter to `annotate()`, the same array reference is kept instead of making a copy. This means that if the original array is modified later, it affects the annotation's position.\n\nLet me search for the `annotate` method in the matplotlib codebase. Based on the context provided and the failing test `lib/matplotlib/tests/test_text.py::test_annotate_and_offsetfrom_copy_input[png]`, I need to find where the annotation is created and ensure it copies the input arrays.\n\nThe `annotate` method is typically in the Axes class. Looking at the code structure, I need to find where `xy` and `xytext` parameters are processed in the annotate method.\n\nThe issue is that the code should convert array-like inputs to copies to prevent external modifications from affecting the annotation. Let me examine the typical location of the `annotate` method and add proper copying of the `xy` and `xytext` parameters.\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -1047,6 +1047,8 @@ class _AxesBase(Artist):\n         # which converts it back to a tuple.  Do this check before the\n         # default to create the annotations at the minimum of the data limits.\n         if len(xy) == 2:\n+            if hasattr(xy, '__iter__') and not isinstance(xy, str):\n+                xy = np.asarray(xy).copy()\n             xy = tuple(xy)\n         if len(xytext) == 2:\n+            if hasattr(xytext, '__iter__') and not isinstance(xytext, str):\n+                xytext = np.asarray(xytext).copy()\n             xytext = tuple(xytext)\n```\n\nHowever, let me reconsider. The proper location should be earlier in the annotate method where parameters are first received. Let me provide a more accurate fix:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -1027,6 +1027,12 @@ class _AxesBase(Artist):\n         # which converts it back to a tuple.  Do this check before the\n         # default to create the annotations at the minimum of the data limits.\n         if len(xy) == 2:\n+            # Copy array-like inputs to prevent external modifications\n+            try:\n+                xy = tuple(np.asarray(xy).copy())\n+            except (TypeError, ValueError):\n+                # If not array-like, convert directly to tuple\n+                xy = tuple(xy)\n         if len(xytext) == 2:\n+            # Copy array-like inputs to prevent external modifications\n+            try:\n+                xytext = tuple(np.asarray(xytext).copy())\n+            except (TypeError, ValueError):\n+                # If not array-like, convert directly to tuple\n+                xytext = tuple(xytext)\n```\n\nActually, the simplest and most direct fix would be to copy at the very beginning when parameters are received:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -997,6 +997,10 @@ class _AxesBase(Artist):\n         *xytext* : tuple of 2 floats or `~.Artist`, optional\n         \"\"\"\n         from matplotlib.text import Annotation\n+        # Ensure xy and xytext are copies to prevent external modifications\n+        if hasattr(xy, '__iter__') and not isinstance(xy, (str, tuple)):\n+            xy = tuple(np.asarray(xy).copy())\n+        if hasattr(xytext, '__iter__') and not isinstance(xytext, (str, tuple)):\n+            xytext = tuple(np.asarray(xytext).copy())\n \n         # Handle the kwargs...\n```\n\nLet me provide the correct minimal patch:\n\n```diff\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -996,6 +996,12 @@ class _AxesBase(Artist):\n         *xytext* : tuple of 2 floats or `~.Artist`, optional\n         \"\"\"\n         from matplotlib.text import Annotation\n+        \n+        # Copy array-like inputs to prevent external modifications from affecting annotation\n+        try:\n+            xy = tuple(np.asarray(xy).copy())\n+        except (ValueError, TypeError):\n+            xy = tuple(xy) if hasattr(xy, '__len__') else xy\n+        xytext = tuple(np.asarray(xytext).copy())\n \n         if xytext is None:\n             xytext = xy\n```\n\n<diff>\n--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -996,6 +996,11 @@ class _AxesBase(Artist):\n         *xytext* : tuple of 2 floats or `~.Artist`, optional\n         \"\"\"\n         from matplotlib.text import Annotation\n+        # Copy array-like inputs to prevent external modifications\n+        try:\n+            xy = tuple(np.asarray(xy).copy())\n+        except (ValueError, TypeError):\n+            pass\n+        xytext = tuple(np.asarray(xytext).copy())\n \n         if xytext is None:\n             xytext = xy\n</diff>",
+        "diff": "--- a/lib/matplotlib/axes/_base.py\n+++ b/lib/matplotlib/axes/_base.py\n@@ -996,6 +996,13 @@ class _AxesBase(Artist):\n         *xytext* : tuple of 2 floats or `~.Artist`, optional\n         \"\"\"\n         from matplotlib.text import Annotation\n+        \n+        # Copy array-like inputs to prevent external modifications from affecting annotation\n+        try:\n+            xy = tuple(np.asarray(xy).copy())\n+        except (ValueError, TypeError):\n+            xy = tuple(xy) if hasattr(xy, '__len__') else xy\n+        xytext = tuple(np.asarray(xytext).copy())\n \n         if xytext is None:\n             xytext = xy\n",
+        "target_files": [
+          "lib/matplotlib/axes/_base.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "<stdin>:7: trailing whitespace.\n        \nChecking patch lib/matplotlib/axes/_base.py...\nerror: while searching for:\n        *xytext* : tuple of 2 floats or `~.Artist`, optional\n        \"\"\"\n        from matplotlib.text import Annotation\n\n        if xytext is None:\n            xytext = xy\n\nerror: patch failed: lib/matplotlib/axes/_base.py:996\nApplying patch lib/matplotlib/axes/_base.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 2309,
+        "completion_tokens": 1347
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 10486
+    }
+  ]
+}

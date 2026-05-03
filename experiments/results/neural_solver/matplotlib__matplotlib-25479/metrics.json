@@ -1,0 +1,100 @@
+{
+  "task_id": "matplotlib__matplotlib-25479",
+  "run_id": "b98f9d7f",
+  "condition": "neural_solver",
+  "success": false,
+  "termination_reason": "budget_exhausted",
+  "total_iterations": 3,
+  "total_prompt_tokens": 9990,
+  "total_completion_tokens": 3006,
+  "total_duration_ms": 26217,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 3,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "3cf12eea",
+        "task_id": "matplotlib__matplotlib-25479",
+        "iteration": 0,
+        "raw_text": "Looking at this bug report, the issue is that when a colormap is registered with a name that differs from the colormap's internal `.name` attribute, the lookup fails because the code uses the colormap's internal name instead of the registered name.\n\nLet me trace through the problem:\n1. A `LinearSegmentedColormap` is created with name `'some_cmap_name'`\n2. It's registered with `cm.register_cmap(name='my_cmap_name', cmap=my_cmap)`\n3. When `plt.imshow()` is called (after `plt.set_cmap('my_cmap_name')`), it tries to get the cmap\n4. The error shows it's looking for `'some_cmap_name'` (the cmap's internal name) instead of `'my_cmap_name'` (the registered name)\n\nThe fix should ensure that when a colormap is retrieved, if it was registered under a specific name, that registered name is used. Looking at the test names provided:\n- `test_colormap_equals` \n- `test_set_cmap_mismatched_name`\n\nThe issue is in how `get_cmap()` works. When a colormap is retrieved by name and then used, its internal `.name` attribute is what gets used for subsequent lookups. The solution is to ensure that when a colormap is registered, its `.name` attribute is updated to match the registered name, OR when retrieving a cmap, we preserve the lookup name.\n\nThe most straightforward fix is to update the colormap's `.name` attribute when it's registered to match the registered name:\n\n```python\n# In matplotlib/cm.py, in the register_cmap function\n```\n\nLet me examine the typical implementation. The `register_cmap` function should update the colormap's name to the registered name.\n\n```diff\n--- a/lib/matplotlib/cm.py\n+++ b/lib/matplotlib/cm.py\n@@ -95,6 +95,8 @@ def register_cmap(name=None, cmap=None, *, force=False):\n     if name is None:\n         name = cmap.name\n     if name in cmap_d and not force:\n         raise ValueError(('Colormap %s is already registered and the name is '\n                           'in use. Pass `force=True` to override an existing colormap.')\n                          % name)\n     # ensure the colormap name matches the registered name\n+    cmap.name = name\n     cmap_d[name] = cmap\n```\n\nWait, let me reconsider. Looking at the stack trace and the error, the issue is that when `ScalarMappable.__init__` is called with no cmap argument, it calls `get_cmap()` with no arguments, which then uses the current colormap name. The current colormap name was set via `plt.set_cmap('my_cmap_name')`, but somewhere the actual colormap object's `.name` attribute is being used instead.\n\nThe proper fix is to ensure that when a colormap is registered under a name, its internal `name` attribute is synchronized to that registered name:\n\n```diff\n--- a/lib/matplotlib/cm.py\n+++ b/lib/matplotlib/cm.py\n@@ -90,11 +90,13 @@ def register_cmap(name=None, cmap=None, *, force=False):\n         If the name is not given, it defaults to cmap.name.\n     \"\"\"\n     if name is None:\n         name = cmap.name\n     if name in cmap_d and not force:\n         raise ValueError(('Colormap %s is already registered and the name is '\n                           'in use. Pass `force=True` to override an existing colormap.')\n                          % name)\n+    cmap.name = name\n     cmap_d[name] = cmap\n \n \n```\n\nThis ensures that the colormap's internal name attribute matches how it was registered, preventing the lookup mismatch described in the bug report.\n\n<diff>\n--- a/lib/matplotlib/cm.py\n+++ b/lib/matplotlib/cm.py\n@@ -97,6 +97,7 @@ def register_cmap(name=None, cmap=None, *, force=False):\n         raise ValueError(('Colormap %s is already registered and the name is '\n                           'in use. Pass `force=True` to override an existing colormap.')\n                          % name)\n+    cmap.name = name\n     cmap_d[name] = cmap\n \n \n</diff>",
+        "diff": "--- a/lib/matplotlib/cm.py\n+++ b/lib/matplotlib/cm.py\n@@ -90,9 +90,10 @@ def register_cmap(name=None, cmap=None, *, force=False):\n         If the name is not given, it defaults to cmap.name.\n     \"\"\"\n     if name is None:\n         name = cmap.name\n     if name in cmap_d and not force:\n         raise ValueError(('Colormap %s is already registered and the name is '\n                           'in use. Pass `force=True` to override an existing colormap.')\n                          % name)\n+    cmap.name = name\n     cmap_d[name] = cmap\n",
+        "target_files": [
+          "lib/matplotlib/cm.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "Checking patch lib/matplotlib/cm.py...\nerror: while searching for:\n        If the name is not given, it defaults to cmap.name.\n    \"\"\"\n    if name is None:\n        name = cmap.name\n    if name in cmap_d and not force:\n        raise ValueError(('Colormap %s is already registered and the name is '\n                          'in use. Pass `force=True` to override an existing colormap.')\n                         % name)\n    cmap_d[name] = cmap\n\nerror: patch failed: lib/matplotlib/cm.py:90\nApplying patch lib/matplotlib/cm.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 3330,
+        "completion_tokens": 1077
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 10232
+    },
+    {
+      "iteration": 1,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "87a41395",
+        "task_id": "matplotlib__matplotlib-25479",
+        "iteration": 1,
+        "raw_text": "Looking at this bug, the issue is that when a colormap is registered with a name that differs from the colormap's internal `name` attribute, the system uses the colormap's internal name instead of the registered name when looking it up later.\n\nThe problem occurs because when `get_cmap()` is called without a name (defaults to `None`), it tries to get the current colormap, but somewhere in the process it's using the colormap's internal `name` attribute instead of looking it up by the registered name.\n\nLet me trace through the code:\n1. User registers colormap: `cm.register_cmap(name='my_cmap_name', cmap=my_cmap)` where `my_cmap.name='some_cmap_name'`\n2. User calls `plt.set_cmap('my_cmap_name')` - this sets the current colormap name to 'my_cmap_name'\n3. When `imshow()` is called without specifying a colormap, it calls `get_cmap()` with no arguments\n4. `get_cmap()` tries to get the current colormap but uses the wrong name\n\nThe fix should be in how the current colormap is retrieved. Looking at the `cm.py` file, when `get_cmap(name=None)` is called, it should use the registered name from `rcParams['image.cmap']`, not the colormap object's internal `name` attribute.\n\nThe key issue is that the colormap object itself has a `name` attribute that gets used, but this should not be used for lookup purposes. Instead, the registered name should be used.\n\n```diff\n--- a/lib/matplotlib/cm.py\n+++ b/lib/matplotlib/cm.py\n@@ -183,7 +183,11 @@ def get_cmap(name=None, lut=None):\n     If *lut* is not None it must be an integer, which specifies the number of\n     entries in the lookup table of the returned colormap.\n     \"\"\"\n-    if name is None:\n-        name = matplotlib.rcParams['image.cmap']\n+    if name is None:\n+        name = matplotlib.rcParams['image.cmap']\n+    \n+    # Ensure we're looking up by the registered name, not the cmap's internal name\n+    if isinstance(name, str):\n+        name = name\n     cmap = cmap_d.get(name, None)\n     if cmap is None and name is not None:\n```\n\nWait, let me reconsider. Looking at the test names `test_colormap_equals` and `test_set_cmap_mismatched_name`, the real issue is likely in the `ScalarMappable.__init__` or how it handles the cmap parameter.\n\nThe problem is that when a colormap is passed to `ScalarMappable`, if the cmap's internal name differs from its registered name, we need to make sure it's looked up correctly. Let me check the actual flow more carefully.\n\nWhen `imshow()` doesn't specify a cmap, `ScalarMappable.__init__` is called with `cmap=None`, which then calls `get_cmap()` with no name, defaulting to the rcParams. The issue is that the colormap object itself has a `name` attribute that may not match the registration name.\n\nThe real fix should be in `register_cmap` - it should update the colormap's `name` attribute to match the registration name:\n\n```diff\n--- a/lib/matplotlib/cm.py\n+++ b/lib/matplotlib/cm.py\n@@ -107,6 +107,8 @@ def register_cmap(name=None, cmap=None, *, force=False):\n         cmap = name\n         name = cmap.name\n     \n+    # Ensure the colormap's name attribute matches the registered name\n+    cmap.name = name\n+    \n     if name in cmap_d:\n         if not force:\n             raise ValueError(\n```\n\nThis ensures that whenever a colormap is registered, its internal `name` attribute is synchronized with the registered name, preventing the confusion.\n\n<div>\n<diff>\n--- a/lib/matplotlib/cm.py\n+++ b/lib/matplotlib/cm.py\n@@ -107,6 +107,8 @@ def register_cmap(name=None, cmap=None, *, force=False):\n         cmap = name\n         name = cmap.name\n     \n+    # Ensure the colormap's name attribute matches the registered name\n+    cmap.name = name\n+    \n     if name in cmap_d:\n         if not force:\n             raise ValueError(\n</diff>\n</div>",
+        "diff": "--- a/lib/matplotlib/cm.py\n+++ b/lib/matplotlib/cm.py\n@@ -107,6 +107,9 @@ def register_cmap(name=None, cmap=None, *, force=False):\n         cmap = name\n         name = cmap.name\n     \n+    # Ensure the colormap's name attribute matches the registered name\n+    cmap.name = name\n+    \n     if name in cmap_d:\n         if not force:\n             raise ValueError(\n",
+        "target_files": [
+          "lib/matplotlib/cm.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "<stdin>:9: trailing whitespace.\n    \nChecking patch lib/matplotlib/cm.py...\nerror: while searching for:\n        cmap = name\n        name = cmap.name\n    \n    if name in cmap_d:\n        if not force:\n            raise ValueError(\n\nerror: patch failed: lib/matplotlib/cm.py:107\nApplying patch lib/matplotlib/cm.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 3330,
+        "completion_tokens": 1105
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 9822
+    },
+    {
+      "iteration": 2,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "1db4ddb9",
+        "task_id": "matplotlib__matplotlib-25479",
+        "iteration": 2,
+        "raw_text": "Looking at this bug, the issue is that when a colormap is registered with a name different from its internal `.name` attribute, matplotlib gets confused about which name to use.\n\nLet me trace through the problem:\n\n1. A `LinearSegmentedColormap` is created with `from_list('some_cmap_name', ...)` - this sets the colormap's internal `.name` to `'some_cmap_name'`\n2. The colormap is registered with `cm.register_cmap(name='my_cmap_name', cmap=my_cmap)` - registering it under a different name\n3. When `plt.set_cmap('my_cmap_name')` is called and then `imshow()` is used, the code tries to look up the colormap by its internal `.name` attribute (`'some_cmap_name'`) instead of the registered name (`'my_cmap_name'`)\n\nThe fix should be in the colormap registration process. When a colormap is registered with a specific name, that name should override or be synchronized with the colormap's internal `.name` attribute.\n\nLooking at the test names:\n- `test_colormap_equals` \n- `test_set_cmap_mismatched_name`\n\nThe issue is likely in `cm.py` where `register_cmap` is defined. The fix should ensure that when a colormap is registered with an explicit name, that name is used instead of the colormap's internal name.\n\nLet me examine the likely fix location - in the `register_cmap` function or related code that handles colormap registration and lookup:\n\n```python\ndef register_cmap(name=None, cmap=None, *, force=False):\n    \"\"\"\n    Register a colormap.\n    \n    Parameters\n    ----------\n    name : str, optional\n        The name for the colormap. If absent, the name is guessed\n        from the colormap's ``name`` attribute.\n    cmap : Colormap\n        The colormap object.\n    force : bool, default: False\n        Overwrite an existing colormap if True.\n    \"\"\"\n    if name is None:\n        name = cmap.name\n    if not force and name in cmap_d:\n        # existing cmap\n        return\n    cmap_d[name] = cmap\n```\n\nThe issue is that the colormap object keeps its original `.name` attribute, so later when the colormap is retrieved, it might use that instead of the registered name. The fix should update the colormap's `.name` attribute when it's registered under a different name:\n\n```python\ndef register_cmap(name=None, cmap=None, *, force=False):\n    \"\"\"\n    Register a colormap.\n    \"\"\"\n    if name is None:\n        name = cmap.name\n    if not force and name in cmap_d:\n        # existing cmap\n        return\n    cmap.name = name  # Ensure the colormap's name matches the registered name\n    cmap_d[name] = cmap\n```\n\n<diff>\n--- a/lib/matplotlib/cm.py\n+++ b/lib/matplotlib/cm.py\n@@ -198,6 +198,7 @@ def register_cmap(name=None, cmap=None, *, force=False):\n     if name is None:\n         name = cmap.name\n     if not force and name in cmap_d:\n         return\n+    cmap.name = name\n     cmap_d[name] = cmap\n</diff>",
+        "diff": "",
+        "target_files": [],
+        "reasoning": "",
+        "parse_ok": false,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 3330,
+        "completion_tokens": 824
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 6162
+    }
+  ]
+}

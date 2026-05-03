@@ -1,0 +1,73 @@
+{
+  "neural_only": {
+    "n_tasks": 20,
+    "bug_resolution_rate": 0.45,
+    "avg_iterations": 2.45,
+    "avg_tokens": 9747.1,
+    "tokens_per_success": 8150.444444,
+    "avg_duration_ms": 32407.0,
+    "solver_overhead_fraction": 0.0,
+    "avg_patch_apply_failures": 2.0,
+    "repeated_counterexample_rate": 0.0,
+    "solver_outcomes": {},
+    "termination_reasons": {
+      "budget_exhausted": 11,
+      "neural_only_patch_applied": 9
+    }
+  },
+  "neural_slicing": {
+    "n_tasks": 20,
+    "bug_resolution_rate": 0.35,
+    "avg_iterations": 2.45,
+    "avg_tokens": 9602.1,
+    "tokens_per_success": 7670.857143,
+    "avg_duration_ms": 19327.2,
+    "solver_overhead_fraction": 0.0,
+    "avg_patch_apply_failures": 2.1,
+    "repeated_counterexample_rate": 0.0,
+    "solver_outcomes": {},
+    "termination_reasons": {
+      "slicing_only_patch_applied": 7,
+      "budget_exhausted": 13
+    }
+  },
+  "neural_solver": {
+    "n_tasks": 20,
+    "bug_resolution_rate": 0.2,
+    "avg_iterations": 2.7,
+    "avg_tokens": 10905.8,
+    "tokens_per_success": 6803.75,
+    "avg_duration_ms": 21386.7,
+    "solver_overhead_fraction": 0.0,
+    "avg_patch_apply_failures": 2.45,
+    "repeated_counterexample_rate": 0.0,
+    "solver_outcomes": {
+      "unsat": 4,
+      "sat": 1
+    },
+    "termination_reasons": {
+      "budget_exhausted": 15,
+      "unsat": 4,
+      "solver_sat_no_feedback": 1
+    }
+  },
+  "neural_cegf": {
+    "n_tasks": 20,
+    "bug_resolution_rate": 0.35,
+    "avg_iterations": 2.5,
+    "avg_tokens": 11345.0,
+    "tokens_per_success": 6300.857143,
+    "avg_duration_ms": 20816.5,
+    "solver_overhead_fraction": 0.0,
+    "avg_patch_apply_failures": 2.0,
+    "repeated_counterexample_rate": 0.1,
+    "solver_outcomes": {
+      "unsat": 7,
+      "sat": 3
+    },
+    "termination_reasons": {
+      "budget_exhausted": 13,
+      "unsat": 7
+    }
+  }
+}

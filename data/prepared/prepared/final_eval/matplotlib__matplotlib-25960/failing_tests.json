@@ -1,0 +1,3 @@
+[
+  "lib/matplotlib/tests/test_figure.py::test_subfigures_wspace_hspace"
+]

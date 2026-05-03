@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -122,7 +122,7 @@ def main() -> int:
             saved_splits[split_name] = len(split_dataset)
 
     metadata = {
-        'downloaded_at': datetime.now(tz=UTC).isoformat(),
+        'downloaded_at': datetime.now(tz=timezone.utc).isoformat(),
         'dataset_id': dataset_id,
         'preset': args.preset,
         'split': args.split,

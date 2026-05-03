@@ -1,0 +1,4 @@
+[
+  "sklearn/metrics/tests/test_ranking.py::test_roc_curve_drop_intermediate",
+  "sklearn/metrics/tests/test_ranking.py::test_roc_curve_with_probablity_estimates[42]"
+]

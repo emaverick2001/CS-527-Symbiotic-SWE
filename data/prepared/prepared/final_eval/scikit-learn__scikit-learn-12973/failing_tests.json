@@ -1,0 +1,3 @@
+[
+  "sklearn/linear_model/tests/test_least_angle.py::test_lasso_lars_fit_copyX_behaviour[False]"
+]

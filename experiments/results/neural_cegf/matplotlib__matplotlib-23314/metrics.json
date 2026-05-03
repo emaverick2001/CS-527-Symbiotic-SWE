@@ -1,0 +1,83 @@
+{
+  "task_id": "matplotlib__matplotlib-23314",
+  "run_id": "18aa07ff",
+  "condition": "neural_cegf",
+  "success": true,
+  "termination_reason": "unsat",
+  "total_iterations": 1,
+  "total_prompt_tokens": 1419,
+  "total_completion_tokens": 876,
+  "total_duration_ms": 6595,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {
+    "unsat": 1
+  },
+  "patch_apply_failures": 0,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "7d1fc353",
+        "task_id": "matplotlib__matplotlib-23314",
+        "iteration": 0,
+        "raw_text": "Looking at this bug, I need to understand what's happening with 3D axes and the `set_visible()` method.\n\nThe issue is that when `set_visible(False)` is called on a 3D axes (created with `projection='3d'`), it doesn't actually hide the axes. The problem is likely that 3D axes have additional artists/patches that need to be hidden separately.\n\nLet me search for the relevant code in the matplotlib repository. The 3D axes are implemented in `lib/mpl_toolkits/mplot3d/axes3d.py`. The `set_visible()` method is inherited from the base `Axes` class, but for 3D axes, there are additional panes and spines that need to be hidden.\n\nLooking at the test that's failing: `lib/mpl_toolkits/tests/test_mplot3d.py::test_invisible_axes[png]`, this confirms we need to fix how visibility works for 3D axes.\n\nThe solution is to override `set_visible()` in the 3D axes class to also set visibility on the panes (the planes that form the background of the 3D plot).\n\nLet me examine the 3D axes implementation and create the fix:\n\n```diff\n--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -281,6 +281,16 @@ class Axes3D(Axes):\n             self._on_move(self.figure.canvas)\n \n     def set_visible(self, b):\n+        \"\"\"\n+        Set the visibility of the Axes.\n+        \n+        Parameters\n+        ----------\n+        b : bool\n+        \"\"\"\n         Axes.set_visible(self, b)\n         # Since the 3D axes panes are not standard artists, we need to\n         # explicitly set their visibility.\n         for spine in self.spines.values():\n             spine.set_visible(b)\n+        for pane in [self.xaxis.pane, self.yaxis.pane, self.zaxis.pane]:\n+            if pane is not None:\n+                pane.set_visible(b)\n```\n\nWait, let me reconsider. Looking more carefully at the 3D axes structure, the panes are `Patch` objects. I need to check what attributes are available on the axes.\n\nAfter analysis, the key insight is that 3D axes have panes that are separate artists. The proper fix is to override `set_visible()` to also hide these panes:\n\n```diff\n--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -280,6 +280,15 @@ class Axes3D(Axes):\n         if self.figure.canvas:\n             self._on_move(self.figure.canvas)\n \n+    def set_visible(self, b):\n+        Axes.set_visible(self, b)\n+        # Set visibility for panes in 3D plots\n+        for pane in [self.xaxis.pane, self.yaxis.pane, self.zaxis.pane]:\n+            if pane is not None:\n+                pane.set_visible(b)\n+        # Set visibility for axis spines\n+        for spine in self.spines.values():\n+            spine.set_visible(b)\n+\n     def get_proj(self):\n         \"\"\"\n         Create the projection matrix from the current viewing position.\n```",
+        "diff": "--- a/lib/mpl_toolkits/mplot3d/axes3d.py\n+++ b/lib/mpl_toolkits/mplot3d/axes3d.py\n@@ -280,6 +280,16 @@ class Axes3D(Axes):\n         if self.figure.canvas:\n             self._on_move(self.figure.canvas)\n \n+    def set_visible(self, b):\n+        Axes.set_visible(self, b)\n+        # Set visibility for panes in 3D plots\n+        for pane in [self.xaxis.pane, self.yaxis.pane, self.zaxis.pane]:\n+            if pane is not None:\n+                pane.set_visible(b)\n+        # Set visibility for axis spines\n+        for spine in self.spines.values():\n+            spine.set_visible(b)\n+\n     def get_proj(self):\n         \"\"\"\n         Create the projection matrix from the current viewing position.\n",
+        "target_files": [
+          "lib/mpl_toolkits/mplot3d/axes3d.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 1419,
+        "completion_tokens": 876
+      },
+      "program_slice": {
+        "schema_version": "0.1.0",
+        "slice_id": "fa495b01",
+        "task_id": "matplotlib__matplotlib-23314",
+        "iteration": 0,
+        "target_functions": [
+          "set_aspect"
+        ],
+        "modified_nodes": [
+          "lib/mpl_toolkits/mplot3d/axes3d.py::set_aspect"
+        ],
+        "affected_variables": [
+          "adjustable",
+          "anchor",
+          "aspect",
+          "self",
+          "share"
+        ],
+        "path_conditions": [
+          "aspect != 'auto'"
+        ],
+        "related_tests": [
+          "lib/mpl_toolkits/mplot3d/axes3d.py"
+        ],
+        "source_snippets": {
+          "lib/mpl_toolkits/mplot3d/axes3d.py::set_aspect": "def set_aspect(self, aspect, adjustable=None, anchor=None, share=False):\n    \"\"\"\n    Set the aspect ratios.\n\n    Axes 3D does not current support any aspect but 'auto' which fills\n    the Axes with the data limits.\n\n    To simulate having equal aspect in data space, set the ratio\n    of your data limits to match the value of `.get_box_aspect`.\n    To control box aspect ratios use `~.Axes3D.set_box_aspect`.\n\n    Parameters\n    ----------\n    aspect : {'auto'}\n        Possible values:\n\n        =========   ==================================================\n        value       description\n        =========   ==================================================\n        'auto'      automatic; fill the position rectangle with data.\n        =========   ==================================================\n\n    adjustable : None\n        Currently ignored by Axes3D\n\n        If not *None*, this defines which parameter will be adjusted to\n        meet the required aspect. See `.set_adjustable` for further\n        details.\n\n    anchor : None or str or 2-tuple of float, optional\n        If not *None*, this defines where the Axes will be drawn if there\n        is extra space due to aspect constraints. The most common way to\n        to specify the anchor are abbreviations of cardinal directions:\n\n        =====   =====================\n        value   description\n        =====   =====================\n        'C'     centered\n        'SW'    lower left corner\n        'S'     middle of bottom edge\n        'SE'    lower right corner\n        etc.\n        =====   =====================\n\n        See `~.Axes.set_anchor` for further details.\n\n    share : bool, default: False\n        If ``True``, apply the settings to all shared Axes.\n\n    See Also\n    --------\n    mpl_toolkits.mplot3d.axes3d.Axes3D.set_box_aspect\n    \"\"\"\n    if aspect != 'auto':\n        raise NotImplementedError(\n            \"Axes3D currently only supports the aspect argument \"\n            f\"'auto'. You passed in {aspect!r}.\"\n        )\n    super().set_aspect(\n        aspect, adjustable=adjustable, anchor=anchor, share=share)"
+        }
+      },
+      "solver_result": {
+        "schema_version": "0.1.0",
+        "solver_result_id": "44d45f24",
+        "task_id": "matplotlib__matplotlib-23314",
+        "iteration": 0,
+        "status": "unsat",
+        "model": null,
+        "violated_property": null,
+        "solver_time_ms": 0,
+        "error": null
+      },
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 6595
+    }
+  ]
+}

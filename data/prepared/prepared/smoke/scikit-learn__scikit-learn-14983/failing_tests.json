@@ -1,0 +1,4 @@
+[
+  "sklearn/model_selection/tests/test_split.py::test_repeated_cv_repr[RepeatedKFold]",
+  "sklearn/model_selection/tests/test_split.py::test_repeated_cv_repr[RepeatedStratifiedKFold]"
+]

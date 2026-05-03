@@ -58,8 +58,13 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
-addopts = "-v --tb=short"
+python_files = "test_*.py"
+pythonpath = ["src", "."]
+addopts = "-v --cov=symbiotic_swe --cov-report=term-missing"
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+]
 
 [tool.coverage.run]
 source = ["src"]

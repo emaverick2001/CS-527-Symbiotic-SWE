@@ -1,0 +1,73 @@
+{
+  "task_id": "sympy__sympy-17318",
+  "run_id": "aead391d",
+  "condition": "neural_only",
+  "success": true,
+  "termination_reason": "neural_only_patch_applied",
+  "total_iterations": 2,
+  "total_prompt_tokens": 6024,
+  "total_completion_tokens": 2013,
+  "total_duration_ms": 16159,
+  "solver_duration_ms": 0,
+  "solver_outcomes": {},
+  "patch_apply_failures": 1,
+  "repeated_counterexamples": 0,
+  "iterations": [
+    {
+      "iteration": 0,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "3acad2ea",
+        "task_id": "sympy__sympy-17318",
+        "iteration": 0,
+        "raw_text": "Looking at the bug report, the issue is an `IndexError` in the `_split_gcd` function in `sympy/simplify/radsimp.py` when it tries to access `a[0]` on an empty tuple.\n\nThe problem occurs when `split_surds` is called with an expression that cannot be properly processed. The function `_split_gcd` assumes it will receive non-empty tuples, but in this case it gets empty ones.\n\nThe fix should be in the `_split_gcd` function to handle the case when the input tuples are empty, returning `None` or some default value that indicates the operation cannot be completed. This will allow the calling code in `_sqrt_match` to handle the exception gracefully and return the original expression unchanged.\n\nLet me trace through the code:\n1. `sqrtdenest` calls `_sqrtdenest0`\n2. `_sqrtdenest0` recursively processes and calls `_sqrtdenest1`\n3. `_sqrtdenest1` calls `_sqrt_match(a)` \n4. `_sqrt_match` calls `split_surds(p)`\n5. `split_surds` calls `_split_gcd(*surds)`\n6. `_split_gcd` tries to access `a[0]` on an empty tuple\n\nThe fix should handle empty surds in `_split_gcd` or catch the exception in `_sqrt_match` and handle it gracefully.\n\nLooking at the context, the best fix is to add a check in `_split_gcd` to handle empty input, and/or in `split_surds` to handle the case where `_split_gcd` returns `None`.\n\n```diff\n--- a/sympy/simplify/radsimp.py\n+++ b/sympy/simplify/radsimp.py\n@@ -1065,6 +1065,9 @@ def _split_gcd(*surds):\n     This function is used internally by `split_surds`.\n     \"\"\"\n     a, b = list(surds), []\n+    \n+    if not a:\n+        return None, None, None\n \n     g = a[0]\n     for i in range(1, len(a)):\n```\n\nWait, let me check the actual implementation more carefully. Looking at the traceback and the code structure, I need to find where the exception should be caught to return the expression unchanged.\n\nThe most appropriate place is in `_sqrt_match` function, where we should catch exceptions and return `None` to indicate that denesting failed.\n\n```diff\n--- a/sympy/simplify/sqrtdenest.py\n+++ b/sympy/simplify/sqrtdenest.py\n@@ -155,7 +155,10 @@ def _sqrt_match(expr):\n     p = p.as_numer_denom()[0]\n     args = expr.as_coeff_Add()\n     b, a = args[1], args[0]\n-    r, b, a = split_surds(p)\n+    try:\n+        r, b, a = split_surds(p)\n+    except (IndexError, ValueError):\n+        return None\n     try:\n         return sqrtdenest_rec(a, b, r, a)\n     except (ValueError, sqrt_depth(x) is None):\n```\n\nActually, looking more carefully at the exception handling, the proper fix is to handle the `IndexError` in the `_split_gcd` function by returning appropriate values when surds is empty:\n\n```diff\n--- a/sympy/simplify/radsimp.py\n+++ b/sympy/simplify/radsimp.py\n@@ -1065,6 +1065,9 @@ def _split_gcd(*surds):\n     This function is used internally by `split_surds`.\n     \"\"\"\n     a, b = list(surds), []\n+    \n+    if not a:\n+        return S.One, S.One, S.One\n \n     g = a[0]\n     for i in range(1, len(a)):\n```\n\n<diff>\n--- a/sympy/simplify/radsimp.py\n+++ b/sympy/simplify/radsimp.py\n@@ -1065,6 +1065,8 @@ def _split_gcd(*surds):\n     This function is used internally by `split_surds`.\n     \"\"\"\n     a, b = list(surds), []\n+    if not a:\n+        return S.One, S.One, S.One\n \n     g = a[0]\n     for i in range(1, len(a)):\n</diff>",
+        "diff": "--- a/sympy/simplify/radsimp.py\n+++ b/sympy/simplify/radsimp.py\n@@ -1065,6 +1065,9 @@ def _split_gcd(*surds):\n     This function is used internally by `split_surds`.\n     \"\"\"\n     a, b = list(surds), []\n+    \n+    if not a:\n+        return S.One, S.One, S.One\n \n     g = a[0]\n     for i in range(1, len(a)):\n",
+        "target_files": [
+          "sympy/simplify/radsimp.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": false,
+        "errors": [
+          "<stdin>:7: trailing whitespace.\n    \nChecking patch sympy/simplify/radsimp.py...\nerror: while searching for:\n    This function is used internally by `split_surds`.\n    \"\"\"\n    a, b = list(surds), []\n\n    g = a[0]\n    for i in range(1, len(a)):\n\nerror: patch failed: sympy/simplify/radsimp.py:1065\nApplying patch sympy/simplify/radsimp.py with 1 reject...\nRejected hunk #1."
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 3012,
+        "completion_tokens": 1114
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 8824
+    },
+    {
+      "iteration": 1,
+      "patch": {
+        "schema_version": "0.1.0",
+        "patch_id": "3e4be902",
+        "task_id": "sympy__sympy-17318",
+        "iteration": 1,
+        "raw_text": "Looking at the bug report, the issue is an `IndexError` in `_split_gcd` function in `sympy/simplify/radsimp.py` at line 1068 where it tries to access `a[0]` on an empty tuple.\n\nThe traceback shows:\n1. `sqrtdenest` is called\n2. It eventually calls `_sqrt_match` \n3. Which calls `split_surds`\n4. Which calls `_split_gcd(*surds)`\n5. `_split_gcd` tries to access `a[0]` on an empty tuple\n\nThe fix should handle the case where `surds` is empty or becomes empty after unpacking. Looking at the code flow, when `_split_gcd` receives an empty argument list (no surds), it should handle this gracefully.\n\nLet me trace through the issue: `split_surds` calls `_split_gcd(*surds)`. If `surds` is an empty tuple, then `_split_gcd()` is called with no arguments, and `a` will be an empty tuple, causing the `IndexError` when accessing `a[0]`.\n\nThe fix should be in `_split_gcd` to handle the case where it receives no arguments (empty tuple) or to have the caller handle empty surds. Based on the bug report saying \"if the expression can't be denested it should be returned unchanged\", the fix should catch this error condition.\n\nLooking at where `_sqrt_match` is called in `_sqrtdenest1`, we should catch exceptions and return the original expression when denesting fails.\n\n```diff\n--- a/sympy/simplify/sqrtdenest.py\n+++ b/sympy/simplify/sqrtdenest.py\n@@ -316,7 +316,12 @@ def _sqrtdenest1(p):\n             break\n         a = p.args[i]\n         if is_sqrt(a):\n-            val = _sqrt_match(a)\n+            try:\n+                val = _sqrt_match(a)\n+            except (IndexError, ValueError):\n+                # If denesting fails, continue with next term\n+                # or return the original expression if we can't proceed\n+                continue\n             if not val:\n                 continue\n```\n\nWait, let me reconsider. The `continue` would skip to the next iteration, but we might want to return early if denesting fails. Let me look at the logic more carefully.\n\nActually, a simpler fix would be to handle the empty case in `_split_gcd` itself in radsimp.py:\n\n```diff\n--- a/sympy/simplify/radsimp.py\n+++ b/sympy/simplify/radsimp.py\n@@ -1065,6 +1065,8 @@ def _split_gcd(*a):\n     >>> _split_gcd((2, 3))\n     (1, (2,), (3,))\n     \"\"\"\n+    if not a:\n+        return 1, (), ()\n     g = a[0]\n     for x in a[1:]:\n         g = gcd(g, x)\n```\n\nThis is the minimal fix - it handles the empty tuple case by returning neutral values.\n\n<diff>\n--- a/sympy/simplify/radsimp.py\n+++ b/sympy/simplify/radsimp.py\n@@ -1065,6 +1065,8 @@ def _split_gcd(*a):\n     >>> _split_gcd((2, 3))\n     (1, (2,), (3,))\n     \"\"\"\n+    if not a:\n+        return 1, (), ()\n     g = a[0]\n     for x in a[1:]:\n         g = gcd(g, x)\n</diff>",
+        "diff": "--- a/sympy/simplify/radsimp.py\n+++ b/sympy/simplify/radsimp.py\n@@ -1065,6 +1065,8 @@ def _split_gcd(*a):\n     >>> _split_gcd((2, 3))\n     (1, (2,), (3,))\n     \"\"\"\n+    if not a:\n+        return 1, (), ()\n     g = a[0]\n     for x in a[1:]:\n         g = gcd(g, x)\n",
+        "target_files": [
+          "sympy/simplify/radsimp.py"
+        ],
+        "reasoning": "",
+        "parse_ok": true,
+        "syntax_ok": false,
+        "apply_ok": true,
+        "errors": [],
+        "model": "claude-haiku-4-5-20251001",
+        "prompt_tokens": 3012,
+        "completion_tokens": 899
+      },
+      "program_slice": null,
+      "solver_result": null,
+      "counterexample": null,
+      "critique": null,
+      "duration_ms": 7335
+    }
+  ]
+}

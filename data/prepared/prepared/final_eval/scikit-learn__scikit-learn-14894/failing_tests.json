@@ -1,0 +1,3 @@
+[
+  "sklearn/svm/tests/test_svm.py::test_sparse_fit_support_vectors_empty"
+]
