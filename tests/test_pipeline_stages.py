@@ -334,7 +334,7 @@ def test_evaluate_task_tests_applies_oracle_test_patch(tmp_path: Path) -> None:
         repo_commit=_git(repo, 'rev-parse', 'HEAD'),
         repo_path=str(repo),
         bug_description='first([]) raises IndexError instead of returning None.',
-        failing_tests=['tests/test_logic.py::test_empty'],
+        failing_tests=['test_empty'],
         oracle=OracleSpec(type='tests', spec={'test_patch': test_patch}),
         metadata=TaskMetadata(dataset='synthetic', logic_heavy=True, repo_name='repo'),
     )
@@ -342,6 +342,7 @@ def test_evaluate_task_tests_applies_oracle_test_patch(tmp_path: Path) -> None:
     result = evaluate_task_tests(repo, task, iteration=0)
 
     assert result.evaluated is True
+    assert result.fail_to_pass.tests == ['tests/test_logic.py::test_empty']
     assert result.fail_to_pass.returncode == 1
     assert 'not found' not in result.fail_to_pass.stderr
     assert 'def test_empty' in (repo / 'tests' / 'test_logic.py').read_text(encoding='utf-8')

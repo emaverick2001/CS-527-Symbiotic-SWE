@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import os
+import re
 import subprocess
 import sys
 import time
@@ -42,6 +44,23 @@ def _oracle_text(task: CanonicalTask, key: str) -> str:
     return raw if isinstance(raw, str) else ''
 
 
+def _test_patch_paths(task: CanonicalTask) -> List[str]:
+    patch_text = _oracle_text(task, 'test_patch')
+    paths: List[str] = []
+    seen: set[str] = set()
+    for match in re.finditer(r'^diff --git a/(\S+) b/(\S+)$', patch_text, flags=re.MULTILINE):
+        path = match.group(2)
+        if path.endswith('.py') and path not in seen:
+            paths.append(path)
+            seen.add(path)
+    for match in re.finditer(r'^\+\+\+ b/(\S+)$', patch_text, flags=re.MULTILINE):
+        path = match.group(1)
+        if path.endswith('.py') and path not in seen:
+            paths.append(path)
+            seen.add(path)
+    return paths
+
+
 def _apply_oracle_test_patch(repo_path: Path, task: CanonicalTask) -> str | None:
     test_patch = _oracle_text(task, 'test_patch')
     if not test_patch.strip():
@@ -51,6 +70,65 @@ def _apply_oracle_test_patch(repo_path: Path, task: CanonicalTask) -> str | None
     if result.applied:
         return None
     return result.error or 'oracle test_patch did not apply'
+
+
+def _looks_like_pytest_node(target: str) -> bool:
+    return '::' in target or target.endswith('.py') or '/' in target or '\\' in target
+
+
+def _is_test_file(path: Path) -> bool:
+    parts = path.parts
+    return path.name.startswith('test_') or path.name.endswith('_test.py') or 'tests' in parts
+
+
+def _iter_candidate_test_files(repo_path: Path, task: CanonicalTask) -> List[Path]:
+    candidates: List[Path] = []
+    seen: set[Path] = set()
+
+    for rel_path in _test_patch_paths(task):
+        path = repo_path / rel_path
+        if path.exists() and path.suffix == '.py' and path not in seen:
+            candidates.append(path)
+            seen.add(path)
+
+    for path in sorted(repo_path.rglob('*.py')):
+        if _is_test_file(path) and path not in seen:
+            candidates.append(path)
+            seen.add(path)
+    return candidates
+
+
+def _find_test_node_in_file(repo_path: Path, path: Path, test_name: str) -> str | None:
+    try:
+        tree = ast.parse(path.read_text(encoding='utf-8', errors='replace'))
+    except Exception:
+        return None
+
+    rel_path = path.relative_to(repo_path).as_posix()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == test_name:
+            return f'{rel_path}::{test_name}'
+        if isinstance(node, ast.ClassDef):
+            for child in node.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child.name == test_name:
+                    return f'{rel_path}::{node.name}::{test_name}'
+    return None
+
+
+def _normalize_test_target(repo_path: Path, task: CanonicalTask, target: str) -> str:
+    target = target.strip()
+    if not target or _looks_like_pytest_node(target):
+        return target
+
+    for path in _iter_candidate_test_files(repo_path, task):
+        node_id = _find_test_node_in_file(repo_path, path, target)
+        if node_id:
+            return node_id
+    return target
+
+
+def _normalize_test_targets(repo_path: Path, task: CanonicalTask, targets: List[str]) -> List[str]:
+    return [_normalize_test_target(repo_path, task, target) for target in targets]
 
 
 def _pytest_env(repo_path: Path) -> dict[str, str]:
@@ -142,6 +220,9 @@ def evaluate_task_tests(
             duration_ms=int((time.time() - started) * 1000),
             error=fail_result.error,
         )
+
+    fail_to_pass = _normalize_test_targets(repo_path, task, fail_to_pass)
+    pass_to_pass = _normalize_test_targets(repo_path, task, pass_to_pass)
 
     f2p_result = _run_pytest_suite(repo_path, 'FAIL_TO_PASS', fail_to_pass, timeout_sec)
     p2p_result = _run_pytest_suite(repo_path, 'PASS_TO_PASS', pass_to_pass, timeout_sec)
