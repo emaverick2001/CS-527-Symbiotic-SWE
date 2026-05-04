@@ -8,8 +8,12 @@ from pathlib import Path
 from typing import List, Optional
 
 
+DEFAULT_PROVIDER = 'openai'
+DEFAULT_MODEL = 'gpt-5.4-mini'
+
+
 def _project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return Path(__file__).resolve().parents[1]
 
 
 def _load_tasks_from_jsonl(path: Path) -> List:
@@ -28,14 +32,27 @@ def _load_prepared_tasks(prepared_dir: Path) -> List:
     tasks = []
     for task_json in sorted(prepared_dir.rglob('task.json')):
         try:
-            tasks.append(CanonicalTask(**json.loads(task_json.read_text(encoding='utf-8'))))
+            task = CanonicalTask(**json.loads(task_json.read_text(encoding='utf-8')))
+            tasks.append(_repair_prepared_task_paths(task))
         except Exception:
             pass
     return tasks
 
 
-def _default_prepared_dir() -> Path:
-    return _project_root() / 'data' / 'prepared' / 'prepared'
+def _default_prepared_dir(subset: str | None = None) -> Path:
+    base = _project_root() / 'data' / 'prepared' / 'prepared'
+    return base / subset if subset else base
+
+
+def _repair_prepared_task_paths(task):
+    """Make checked-in prepared tasks portable across local checkout paths."""
+    if task.repo_path and Path(task.repo_path).exists():
+        return task
+
+    local_repo = _project_root() / 'data' / 'prepared' / 'workspaces' / task.task_id / 'repo'
+    if local_repo.exists():
+        return task.model_copy(update={'repo_path': str(local_repo)})
+    return task
 
 
 def _select_tasks(tasks: List, task_ids: Optional[List[str]]) -> List:
@@ -43,6 +60,59 @@ def _select_tasks(tasks: List, task_ids: Optional[List[str]]) -> List:
         return tasks
     wanted = set(task_ids)
     return [task for task in tasks if task.task_id in wanted]
+
+
+def _api_key_from_env(provider: str) -> str | None:
+    if provider == 'openai':
+        return os.environ.get('OPENAI_API_KEY')
+    return os.environ.get('ANTHROPIC_API_KEY')
+
+
+def _preflight_smoke(
+    *,
+    prepared_dir: Path,
+    output_dir: Path | None,
+    task_ids: Optional[List[str]],
+    api_key: Optional[str],
+    provider: str,
+) -> int:
+    tasks = _select_tasks(_load_prepared_tasks(prepared_dir), task_ids)
+    failures: list[str] = []
+
+    if not prepared_dir.exists():
+        failures.append(f'prepared directory does not exist: {prepared_dir}')
+    if not tasks:
+        failures.append(f'no prepared tasks found in {prepared_dir}')
+
+    missing_repos = []
+    for task in tasks:
+        if not task.repo_path:
+            missing_repos.append(f'{task.task_id}: missing repo_path')
+            continue
+        repo_path = Path(task.repo_path)
+        if not repo_path.exists():
+            missing_repos.append(f'{task.task_id}: repo_path does not exist: {repo_path}')
+    failures.extend(missing_repos)
+
+    if not api_key:
+        env_name = 'OPENAI_API_KEY' if provider == 'openai' else 'ANTHROPIC_API_KEY'
+        failures.append(f'{env_name} is not set and --api-key was not provided')
+
+    print('Smoke preflight')
+    print(f'  prepared_dir: {prepared_dir}')
+    print(f'  output_dir:   {output_dir or "(auto artifacts/runs/<run_id>)"}')
+    print(f'  tasks:        {len(tasks)}')
+    print(f'  provider:     {provider}')
+    print(f'  api_key:      {"set" if api_key else "missing"}')
+
+    if failures:
+        print('  status:       failed')
+        for failure in failures:
+            print(f'  - {failure}')
+        return 1
+
+    print('  status:       ready')
+    return 0
 
 
 # ── sub-commands ────────────────────────────────────────────────────────────
@@ -69,8 +139,9 @@ def cmd_run_task(args: argparse.Namespace) -> int:
         task=task,
         condition=args.condition,
         max_iterations=args.max_iterations,
-        api_key=args.api_key or os.environ.get('ANTHROPIC_API_KEY'),
+        api_key=args.api_key or _api_key_from_env(args.provider),
         model=args.model,
+        provider=args.provider,
         work_root=Path(args.work_root) if args.work_root else None,
     )
 
@@ -85,9 +156,20 @@ def cmd_run_task(args: argparse.Namespace) -> int:
 def cmd_run_benchmark(args: argparse.Namespace) -> int:
     from symbiotic_swe.orchestration.runner import run_benchmark
 
-    prepared_dir = Path(args.prepared_dir).resolve() if args.prepared_dir else _default_prepared_dir()
+    default_subset = 'smoke' if args.command == 'smoke' else None
+    prepared_dir = Path(args.prepared_dir).resolve() if args.prepared_dir else _default_prepared_dir(default_subset)
     output_dir = Path(args.output_dir).resolve() if args.output_dir else None
     conditions = args.conditions.split(',')
+    api_key = args.api_key or _api_key_from_env(args.provider)
+
+    if getattr(args, 'preflight_only', False):
+        return _preflight_smoke(
+            prepared_dir=prepared_dir,
+            output_dir=output_dir,
+            task_ids=args.task_ids,
+            api_key=api_key,
+            provider=args.provider,
+        )
 
     tasks = _select_tasks(_load_prepared_tasks(prepared_dir), args.task_ids)
     if not tasks:
@@ -99,8 +181,9 @@ def cmd_run_benchmark(args: argparse.Namespace) -> int:
         tasks=tasks,
         conditions=conditions,
         max_iterations=args.max_iterations,
-        api_key=args.api_key or os.environ.get('ANTHROPIC_API_KEY'),
+        api_key=api_key,
         model=args.model,
+        provider=args.provider,
         output_dir=output_dir,
         work_root=Path(args.work_root) if args.work_root else None,
         experiment_name=args.experiment_name,
@@ -146,7 +229,8 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=['neural_only', 'neural_slicing', 'neural_solver', 'neural_cegf'])
     p_task.add_argument('--max-iterations', type=int, default=3)
     p_task.add_argument('--api-key')
-    p_task.add_argument('--model', default='claude-sonnet-4-6')
+    p_task.add_argument('--provider', default=DEFAULT_PROVIDER, choices=['anthropic', 'openai'])
+    p_task.add_argument('--model', default=DEFAULT_MODEL)
     p_task.add_argument('--work-root')
     p_task.add_argument('--output')
 
@@ -157,7 +241,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_smoke.add_argument('--output-dir')
     p_smoke.add_argument('--max-iterations', type=int, default=3)
     p_smoke.add_argument('--api-key')
-    p_smoke.add_argument('--model', default='claude-sonnet-4-6')
+    p_smoke.add_argument('--provider', default=DEFAULT_PROVIDER, choices=['anthropic', 'openai'])
+    p_smoke.add_argument('--model', default=DEFAULT_MODEL)
+    p_smoke.add_argument('--conditions', default='neural_only,neural_slicing,neural_solver,neural_cegf')
+    p_smoke.add_argument('--work-root')
+    p_smoke.add_argument('--preflight-only', action='store_true')
 
     # benchmark — full benchmark run
     p_bench = sub.add_parser('benchmark', help='Run all conditions on a prepared dataset')
@@ -167,7 +255,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_bench.add_argument('--conditions', default='neural_only,neural_cegf')
     p_bench.add_argument('--max-iterations', type=int, default=3)
     p_bench.add_argument('--api-key')
-    p_bench.add_argument('--model', default='claude-sonnet-4-6')
+    p_bench.add_argument('--provider', default=DEFAULT_PROVIDER, choices=['anthropic', 'openai'])
+    p_bench.add_argument('--model', default=DEFAULT_MODEL)
     p_bench.add_argument('--work-root')
     p_bench.add_argument('--experiment-name', default='symbiotic_swe')
 
@@ -179,7 +268,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_abl.add_argument('--output-dir')
     p_abl.add_argument('--max-iterations', type=int, default=3)
     p_abl.add_argument('--api-key')
-    p_abl.add_argument('--model', default='claude-sonnet-4-6')
+    p_abl.add_argument('--provider', default=DEFAULT_PROVIDER, choices=['anthropic', 'openai'])
+    p_abl.add_argument('--model', default=DEFAULT_MODEL)
 
     # prepare-dataset
     p_prep = sub.add_parser('prepare-dataset', help='Prepare SWE-bench tasks for the pipeline')

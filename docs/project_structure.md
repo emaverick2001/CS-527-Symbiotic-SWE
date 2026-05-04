@@ -28,7 +28,7 @@ data/
 docs/
 notebooks/
 scripts/
-src/
+symbiotic_swe/
 tests/
 ```
 
@@ -155,20 +155,19 @@ configs/
 
 Config files should be declarative. Do not encode project paths in scripts when the value can live in YAML.
 
-## Source Packages
+## Source Package
 
-The current source layout is stage-oriented:
+The runtime source layout is stage-oriented under a single importable package:
 
-- `src/dataset/`: benchmark loading, normalization, validation, and manifest writing.
-- `src/retrieval/` and `src/context_selection/`: logic-aware file, symbol, and chunk selection.
-- `src/patch_generation/`: candidate patch generation and patch refinement.
-- `src/slicing/`: extraction of code slices relevant to solver checks.
-- `src/symbolic/` and `src/symbolic_reasoning/`: constraint construction, solver invocation, and counterexample handling.
-- `src/feedback/`: transforms solver outputs into actionable patch critiques.
-- `src/evaluation/`: task execution, result scoring, and metric aggregation.
-- `src/orchestration/`: run workspace management, stage execution, and artifact layout.
-- `src/pipeline/`: public pipeline entrypoints.
-- `src/utils/`: shared config, path, seed, logging, and I/O helpers.
+- `symbiotic_swe/dataset/`: benchmark loading, normalization, validation, repository materialization, and manifest writing.
+- `symbiotic_swe/context_selection/`: logic-aware file, symbol, and chunk selection.
+- `symbiotic_swe/patch_generation/`: candidate patch generation and critique-aware patch refinement.
+- `symbiotic_swe/slicing/`: extraction of code slices relevant to solver checks.
+- `symbiotic_swe/symbolic_reasoning/`: constraint/heuristic checks, solver invocation, and counterexample handling.
+- `symbiotic_swe/feedback/`: transforms solver outputs into actionable patch critiques.
+- `symbiotic_swe/evaluation/`: pytest execution, result scoring, and metric aggregation.
+- `symbiotic_swe/orchestration/`: run workspace management, experiment loops, and artifact layout.
+- `symbiotic_swe/cli.py`: public command entrypoint.
 
 Keep stage contracts explicit. A stage should write its own artifacts and consume only declared upstream artifacts.
 

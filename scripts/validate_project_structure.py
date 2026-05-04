@@ -47,7 +47,14 @@ REQUIRED_DIRECTORIES = (
     'docs',
     'notebooks',
     'scripts',
-    'src',
+    'symbiotic_swe/context_selection',
+    'symbiotic_swe/dataset',
+    'symbiotic_swe/evaluation',
+    'symbiotic_swe/feedback',
+    'symbiotic_swe/orchestration',
+    'symbiotic_swe/patch_generation',
+    'symbiotic_swe/slicing',
+    'symbiotic_swe/symbolic_reasoning',
     'tests',
 )
 

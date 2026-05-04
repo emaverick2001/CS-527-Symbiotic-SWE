@@ -70,7 +70,8 @@ def run_cegf_loop(
     condition: str = 'neural_cegf',
     max_iterations: int = 3,
     api_key: Optional[str] = None,
-    model: str = 'claude-sonnet-4-6',
+    model: str = 'gpt-5.4-mini',
+    provider: str = 'openai',
     work_root: Optional[Path] = None,
 ) -> RunMetrics:
     assert condition in {'neural_only', 'neural_slicing', 'neural_solver', 'neural_cegf'}
@@ -83,6 +84,8 @@ def run_cegf_loop(
         task_id=task.task_id,
         run_id=run_id,
         condition=condition,
+        model_provider=provider,
+        model=model,
     )
 
     context = select_context(task, repo_index)
@@ -109,6 +112,7 @@ def run_cegf_loop(
             repo_path=repo_path,
             api_key=api_key,
             model=model,
+            provider=provider,
         )
         record.patch = patch
         metrics.total_prompt_tokens += patch.prompt_tokens

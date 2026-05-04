@@ -4,31 +4,26 @@ expected by legacy tests and scripts.
 """
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-# ensure src/ is importable
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-
-from src.dataset.task_loader import (
+from symbiotic_swe.dataset.task_loader import (
     PREFERRED_REPOS,
-    changed_files,
-    collect_hits,
-    count_changed_lines,
-    label_task,
     LOGIC_PATCH_PATTERNS,
     LOGIC_TEXT_PATTERNS,
     NEGATIVE_PATCH_PATTERNS,
     NEGATIVE_TEXT_PATTERNS,
-    _score_patch_size,
-    _score_patch_signals,
-    _score_text_signals,
-    _score_labels,
-    _score_repo,
     _negative_patch_exclusions,
     _negative_text_penalty,
+    _score_labels,
+    _score_patch_signals,
+    _score_patch_size,
+    _score_repo,
+    _score_text_signals,
+    changed_files,
+    collect_hits,
+    count_changed_lines,
+    label_task,
 )
 
 __all__ = [

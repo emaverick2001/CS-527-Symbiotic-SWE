@@ -8,15 +8,22 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from symbiotic_swe.contracts import PreparedTaskArtifact
 from symbiotic_swe.dataset.repo_indexer import RepositoryIndexer, RepositoryIndexerConfig
-from symbiotic_swe.dataset.task_loader import TaskLoader, TaskLoaderConfig
-from symbiotic_swe.dataset.task_normalizer import TaskNormalizer
-from src.dataset.task_loader import (
-    PREFERRED_REPOS,
+from symbiotic_swe.dataset.task_loader import (
     CandidateTask,
+    PREFERRED_REPOS,
     RawTaskError,
+    TaskLoader,
+    TaskLoaderConfig,
     TaskObject,
 )
-from src.dataset.dataset_writer import write_jsonl
+from symbiotic_swe.dataset.task_normalizer import TaskNormalizer
+
+
+def write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('w', encoding='utf-8') as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + '\n')
 
 
 @dataclass

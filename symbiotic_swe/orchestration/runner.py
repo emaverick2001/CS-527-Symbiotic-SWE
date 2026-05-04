@@ -49,6 +49,7 @@ def _write_run_artifacts(
     conditions: List[str],
     results: Dict[str, List[RunMetrics]],
     model: str,
+    provider: str,
     max_iterations: int,
     experiment_name: str,
     started_at: str,
@@ -60,6 +61,7 @@ def _write_run_artifacts(
         '\n'.join(
             [
                 f'experiment_name: {experiment_name}',
+                f'provider: {provider}',
                 f'model: {model}',
                 f'max_iterations: {max_iterations}',
                 'conditions:',
@@ -73,6 +75,7 @@ def _write_run_artifacts(
         run_dir / 'run_manifest.json',
         {
             'experiment_name': experiment_name,
+            'provider': provider,
             'model': model,
             'conditions': conditions,
             'max_iterations': max_iterations,
@@ -121,6 +124,8 @@ def _write_run_artifacts(
                             'condition': condition,
                             'task_id': metrics.task_id,
                             'run_id': metrics.run_id,
+                            'model_provider': metrics.model_provider,
+                            'model': metrics.model,
                             'iteration': record.iteration,
                             'patch_id': record.patch.patch_id,
                             'target_files': record.patch.target_files,
@@ -156,6 +161,8 @@ def _write_run_artifacts(
                     'condition': condition,
                     'task_id': metrics.task_id,
                     'run_id': metrics.run_id,
+                    'model_provider': metrics.model_provider,
+                    'model': metrics.model,
                     'final_patch_id': final_patch_id,
                     'success': metrics.success,
                     'termination_reason': metrics.termination_reason,
@@ -183,11 +190,17 @@ def run_task(
     condition: str = 'neural_cegf',
     max_iterations: int = 3,
     api_key: Optional[str] = None,
-    model: str = 'claude-sonnet-4-6',
+    model: str = 'gpt-5.4-mini',
+    provider: str = 'openai',
     work_root: Optional[Path] = None,
     cache_root: Optional[Path] = None,
 ) -> RunMetrics:
-    api_key = api_key or os.environ.get('ANTHROPIC_API_KEY')
+    if provider == 'openai':
+        api_key = api_key or os.environ.get('OPENAI_API_KEY')
+    elif provider == 'anthropic':
+        api_key = api_key or os.environ.get('ANTHROPIC_API_KEY')
+    else:
+        raise ValueError(f'unsupported model provider: {provider}')
 
     repo_path = Path(task.repo_path) if task.repo_path else None
     cache_root = cache_root or Path('/tmp/symbiotic_swe_cache')
@@ -209,6 +222,7 @@ def run_task(
         max_iterations=max_iterations,
         api_key=api_key,
         model=model,
+        provider=provider,
         work_root=work_root,
     )
 
@@ -218,7 +232,8 @@ def run_benchmark(
     conditions: List[str] = ('neural_only', 'neural_cegf'),
     max_iterations: int = 3,
     api_key: Optional[str] = None,
-    model: str = 'claude-sonnet-4-6',
+    model: str = 'gpt-5.4-mini',
+    provider: str = 'openai',
     output_dir: Optional[Path] = None,
     work_root: Optional[Path] = None,
     cache_root: Optional[Path] = None,
@@ -239,6 +254,7 @@ def run_benchmark(
                 max_iterations=max_iterations,
                 api_key=api_key,
                 model=model,
+                provider=provider,
                 work_root=work_root,
                 cache_root=cache_root,
             )
@@ -260,6 +276,7 @@ def run_benchmark(
         conditions=conditions,
         results=results,
         model=model,
+        provider=provider,
         max_iterations=max_iterations,
         experiment_name=experiment_name,
         started_at=started_at,

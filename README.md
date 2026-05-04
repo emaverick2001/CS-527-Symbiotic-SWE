@@ -67,20 +67,24 @@ docker run --rm -it symbiotic-swe
 
 ## Running The Scaffold
 
+Real patch generation defaults to the OpenAI Responses API. Set `OPENAI_API_KEY`, or pass `--api-key`; use `--provider` and `--model` to compare repair agents.
+
 ```bash
 # Single-task execution
-poetry run symbiotic-swe-task --task-id demo-task --max-iterations 2
+uv run symbiotic-swe task --task-id demo-task --max-iterations 2
 
 # Smoke execution
-poetry run symbiotic-swe-smoke
+uv run symbiotic-swe smoke --prepared-dir data/prepared/prepared/smoke
+
+# Smoke model ablation
+MODELS="openai:gpt-5.4-mini openai:gpt-5.5 openai:gpt-5.3-codex" \
+  scripts/run_model_ablation.sh
 
 # Benchmark execution
-poetry run symbiotic-swe-benchmark --task-id task-001 --task-id task-002
+uv run symbiotic-swe benchmark --prepared-dir data/prepared/prepared/dev
 
 # Ablation execution
-poetry run symbiotic-swe-ablation \
-  --ablation-name no-symbolic-feedback \
-  --task-id task-001
+uv run symbiotic-swe ablation --prepared-dir data/prepared/prepared/dev
 ```
 
 ## Downloading SWE-bench
@@ -124,24 +128,8 @@ If you only want one split, pass `--split test` or another split name.
 
 ## Repository Structure
 
-- `src/pipeline/`
-  - shared pipeline controller entrypoint
-- `src/dataset/`
-  - task loading and preprocessing placeholders
-- `src/context_selection/`
-  - logic-focused context selection placeholders
-- `src/patch_generation/`
-  - patch generation stage placeholder
-- `src/slicing/`
-  - slicing stage placeholder
-- `src/symbolic/`
-  - symbolic reasoning package aligned to the proposal naming
-- `src/feedback/`
-  - counterexample-to-critique placeholder contracts
-- `src/evaluation/`
-  - evaluation stage placeholder
-- `src/orchestration/`
-  - run/workspace scaffolding used by the controller
+- `symbiotic_swe/`
+  - single runtime package for dataset preparation, context selection, patch generation, slicing, symbolic reasoning, feedback, orchestration, and evaluation
 - `configs/`
   - default, task, smoke, benchmark, and ablation configs
 - `data/tasks/`

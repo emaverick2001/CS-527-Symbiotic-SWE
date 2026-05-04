@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from src.dataset.task_loader import CandidateTask
 from symbiotic_swe.contracts import CanonicalTask, OracleSpec, TaskMetadata
+from symbiotic_swe.dataset.task_loader import CandidateTask
 
 
 _BUG_TYPE_PRIORITY = [

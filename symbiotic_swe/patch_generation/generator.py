@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import re
+import sys
+import time as _time
 import uuid
+from pathlib import Path
 from typing import List, Optional
 
 from symbiotic_swe.contracts import (
@@ -13,10 +16,9 @@ from symbiotic_swe.contracts import (
 from symbiotic_swe.context_selection.selector import load_context_source
 from symbiotic_swe.patch_generation.prompt_builder import SYSTEM_PROMPT, build_patch_prompt
 
-from pathlib import Path
 
-
-MODEL = 'claude-sonnet-4-6'
+MODEL = 'gpt-5.4-mini'
+PROVIDER = 'openai'
 MAX_TOKENS = 4096
 
 
@@ -51,7 +53,7 @@ def _fix_hunk_counts(diff: str) -> str:
 
 
 def _extract_diff(raw_text: str) -> str:
-    # Collect all ```diff blocks; use the last non-empty one (Claude refines toward the end)
+    # Collect all ```diff blocks; use the last non-empty one.
     candidates = re.findall(r'```diff\s*\n(.*?)```', raw_text, re.DOTALL)
     candidates = [c.strip() for c in candidates if c.strip()]
     if candidates:
@@ -77,6 +79,83 @@ def _changed_files(diff: str) -> List[str]:
     return list(dict.fromkeys(files))
 
 
+def _usage_value(usage: object, *names: str) -> int:
+    for name in names:
+        value = getattr(usage, name, None)
+        if isinstance(value, int):
+            return value
+    return 0
+
+
+def _call_anthropic(
+    *,
+    messages: List[dict],
+    api_key: Optional[str],
+    model: str,
+) -> tuple[str, int, int]:
+    import anthropic as _anthropic
+
+    client = _anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model=model,
+        max_tokens=MAX_TOKENS,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+    )
+    return (
+        response.content[0].text,
+        _usage_value(response.usage, 'input_tokens'),
+        _usage_value(response.usage, 'output_tokens'),
+    )
+
+
+def _call_openai(
+    *,
+    messages: List[dict],
+    api_key: Optional[str],
+    model: str,
+) -> tuple[str, int, int]:
+    from openai import OpenAI
+
+    user_content = '\n\n'.join(str(message.get('content', '')) for message in messages if message.get('role') == 'user')
+    client = OpenAI(api_key=api_key)
+    response = client.responses.create(
+        model=model,
+        instructions=SYSTEM_PROMPT,
+        input=user_content,
+        max_output_tokens=MAX_TOKENS,
+    )
+    raw_text = getattr(response, 'output_text', '') or ''
+    if not raw_text:
+        parts: list[str] = []
+        for item in getattr(response, 'output', []) or []:
+            for content in getattr(item, 'content', []) or []:
+                text = getattr(content, 'text', None)
+                if text:
+                    parts.append(text)
+        raw_text = '\n'.join(parts)
+    usage = getattr(response, 'usage', None)
+    return (
+        raw_text,
+        _usage_value(usage, 'input_tokens'),
+        _usage_value(usage, 'output_tokens'),
+    )
+
+
+def _call_model(
+    *,
+    provider: str,
+    messages: List[dict],
+    api_key: Optional[str],
+    model: str,
+) -> tuple[str, int, int]:
+    if provider == 'anthropic':
+        return _call_anthropic(messages=messages, api_key=api_key, model=model)
+    if provider == 'openai':
+        return _call_openai(messages=messages, api_key=api_key, model=model)
+    raise ValueError(f'unsupported model provider: {provider}')
+
+
 def generate_patch(
     task: CanonicalTask,
     context: RetrievedContext,
@@ -85,15 +164,12 @@ def generate_patch(
     repo_path: Optional[Path] = None,
     api_key: Optional[str] = None,
     model: str = MODEL,
+    provider: str = PROVIDER,
 ) -> PatchContract:
     patch_id = str(uuid.uuid4())[:8]
     context_source = load_context_source(task, context, repo_path)
 
     messages = build_patch_prompt(task, context_source, iteration, critique)
-
-    import sys
-    import time as _time
-    import anthropic as _anthropic
 
     raw_text = ''
     prompt_tokens = 0
@@ -102,27 +178,22 @@ def generate_patch(
 
     for attempt in range(3):
         try:
-            client = _anthropic.Anthropic(api_key=api_key)
-            response = client.messages.create(
-                model=model,
-                max_tokens=MAX_TOKENS,
-                system=SYSTEM_PROMPT,
+            raw_text, prompt_tokens, completion_tokens = _call_model(
+                provider=provider,
                 messages=messages,
+                api_key=api_key,
+                model=model,
             )
-            raw_text = response.content[0].text
-            prompt_tokens = response.usage.input_tokens
-            completion_tokens = response.usage.output_tokens
             last_exc = None
             break
-        except (_anthropic.APIConnectionError, _anthropic.APITimeoutError) as exc:
-            last_exc = exc
-            wait = 2 ** attempt
-            print(f'  [generator retry {attempt + 1}/3 in {wait}s] {exc}', file=sys.stderr)
-            _time.sleep(wait)
         except Exception as exc:
             last_exc = exc
-            print(f'  [generator error] {exc}', file=sys.stderr)
-            break
+            if attempt < 2:
+                wait = 2 ** attempt
+                print(f'  [generator retry {attempt + 1}/3 in {wait}s] {exc}', file=sys.stderr)
+                _time.sleep(wait)
+            else:
+                print(f'  [generator error] {exc}', file=sys.stderr)
 
     if last_exc is not None:
         return PatchContract(
@@ -132,7 +203,7 @@ def generate_patch(
             raw_text='',
             diff='',
             errors=[str(last_exc)],
-            model=model,
+            model=f'{provider}:{model}',
         )
 
     diff = _extract_diff(raw_text)
@@ -147,7 +218,7 @@ def generate_patch(
         diff=diff,
         target_files=target_files,
         parse_ok=parse_ok,
-        model=model,
+        model=f'{provider}:{model}',
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
     )

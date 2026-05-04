@@ -19,3 +19,25 @@ def test_cli_exposes_all_execution_modes() -> None:
     assert benchmark_args.command == 'benchmark'
     assert benchmark_args.task_ids == ['bug-001', 'bug-002']
     assert ablation_args.command == 'ablation'
+    assert smoke_args.provider == 'openai'
+    assert smoke_args.model == 'gpt-5.4-mini'
+
+
+def test_cli_accepts_openai_provider_for_smoke() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            'smoke',
+            '--preflight-only',
+            '--provider',
+            'openai',
+            '--model',
+            'gpt-5.5',
+        ]
+    )
+
+    assert args.command == 'smoke'
+    assert args.preflight_only is True
+    assert args.provider == 'openai'
+    assert args.model == 'gpt-5.5'

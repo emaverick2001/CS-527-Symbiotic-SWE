@@ -201,6 +201,8 @@ class RunMetrics(BaseModel):
     task_id: str
     run_id: str
     condition: str  # 'neural_only' | 'neural_cegf' | 'neural_slicing' | 'neural_solver'
+    model_provider: str = ''
+    model: str = ''
     success: bool = False
     termination_reason: str = ''
     total_iterations: int = 0
