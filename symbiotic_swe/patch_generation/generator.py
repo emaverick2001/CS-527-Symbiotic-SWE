@@ -52,18 +52,39 @@ def _fix_hunk_counts(diff: str) -> str:
     return '\n'.join(result) + '\n'
 
 
+def _ensure_git_headers(diff: str) -> str:
+    lines = diff.splitlines()
+    if not lines or lines[0].startswith('diff --git '):
+        return diff
+
+    result: List[str] = []
+    i = 0
+    while i < len(lines):
+        if (
+            lines[i].startswith('--- a/')
+            and i + 1 < len(lines)
+            and lines[i + 1].startswith('+++ b/')
+        ):
+            old_path = lines[i].removeprefix('--- ')
+            new_path = lines[i + 1].removeprefix('+++ ')
+            result.append(f'diff --git {old_path} {new_path}')
+        result.append(lines[i])
+        i += 1
+    return '\n'.join(result) + '\n'
+
+
 def _extract_diff(raw_text: str) -> str:
     # Collect all ```diff blocks; use the last non-empty one.
     candidates = re.findall(r'```diff\s*\n(.*?)```', raw_text, re.DOTALL)
     candidates = [c.strip() for c in candidates if c.strip()]
     if candidates:
-        return _fix_hunk_counts(candidates[-1])
+        return _ensure_git_headers(_fix_hunk_counts(candidates[-1]))
     # Fallback: unnamed code block that looks like a diff
     blocks = re.findall(r'```\s*\n(.*?)```', raw_text, re.DOTALL)
     for block in reversed(blocks):
         block = block.strip()
         if block.startswith(('diff --git', '--- ', '@@ ', '+')):
-            return _fix_hunk_counts(block)
+            return _ensure_git_headers(_fix_hunk_counts(block))
     return ''
 
 

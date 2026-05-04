@@ -49,6 +49,11 @@ packages = ["symbiotic_swe"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+exclude = [
+    "data/prepared/workspaces",
+    "data/raw/repositories",
+    "artifacts/workspaces",
+]
 
 [tool.mypy]
 python_version = "3.11"

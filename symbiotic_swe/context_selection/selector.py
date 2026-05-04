@@ -77,6 +77,28 @@ def select_context(
     )
 
 
+def _traceback_locations(task: CanonicalTask) -> List[tuple[str, int]]:
+    text = '\n'.join([task.bug_description, *task.execution_trace])
+    locations: List[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+    for match in re.finditer(r'([A-Za-z0-9_./-]+\.py):(\d+)', text):
+        path = match.group(1).lstrip('./')
+        line = int(match.group(2))
+        key = (path, line)
+        if key not in seen:
+            locations.append(key)
+            seen.add(key)
+    return locations
+
+
+def _line_window(source: str, center_line: int, radius: int = 45) -> tuple[int, int, str]:
+    lines = source.splitlines()
+    start = max(1, center_line - radius)
+    end = min(len(lines), center_line + radius)
+    excerpt = '\n'.join(lines[start - 1:end])
+    return start, end, excerpt
+
+
 def load_context_source(
     task: CanonicalTask,
     context: RetrievedContext,
@@ -92,7 +114,27 @@ def load_context_source(
     PER_FILE_LIMIT = 8_000
     CONTEXT_WINDOW = 3_000  # chars around matched symbol when file is large
     chunks: List[str] = []
+    seen_paths: set[str] = set()
+
+    for rel_path, line in _traceback_locations(task):
+        fpath = repo_path / rel_path
+        if not fpath.exists():
+            continue
+        try:
+            source = fpath.read_text(encoding='utf-8', errors='replace')
+        except Exception:
+            continue
+        start, end, excerpt = _line_window(source, line)
+        chunks.append(
+            f'# File: {rel_path}\n'
+            f'# Exact checked-out source lines {start}-{end}; line {line} is from the traceback.\n'
+            f'{excerpt}'
+        )
+        seen_paths.add(rel_path)
+
     for entry in context.files:
+        if entry.path in seen_paths:
+            continue
         fpath = repo_path / entry.path
         if fpath.exists():
             try:

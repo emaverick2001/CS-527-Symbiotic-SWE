@@ -197,9 +197,10 @@ def apply_patch_to_repository(repo_path: Path, patch_text: str) -> PatchApplicat
     if not patch_text.strip():
         return PatchApplicationResult(applied=False, error='empty patch')
 
-    # Try strict git apply first
+    # Try atomic git apply modes first. Avoid --reject here because it can leave
+    # partial changes and .rej files before more tolerant fallbacks run.
     result = subprocess.run(
-        ['git', 'apply', '--reject', '-'],
+        ['git', 'apply', '--recount', '-'],
         input=patch_text,
         cwd=repo_path,
         capture_output=True,
@@ -210,21 +211,47 @@ def apply_patch_to_repository(repo_path: Path, patch_text: str) -> PatchApplicat
 
     first_error = result.stderr.strip() or result.stdout.strip()
 
-    # Fallback: patch with fuzz=3 to tolerate slightly wrong context lines
-    result2 = subprocess.run(
-        ['patch', '-p1', '-F3', '-t', '--no-backup-if-mismatch'],
+    result_3way = subprocess.run(
+        ['git', 'apply', '--3way', '--recount', '-'],
         input=patch_text,
         cwd=repo_path,
         capture_output=True,
         text=True,
     )
-    if result2.returncode == 0:
+    if result_3way.returncode == 0:
         return PatchApplicationResult(applied=True)
 
-    rejected = first_error.count('.rej') + result.stdout.count('.rej')
+    # Fallback: patch with fuzz=3 to tolerate slightly wrong line numbers or
+    # small context drift. Dry-run first so failed attempts do not dirty the repo.
+    patch_dry_run = subprocess.run(
+        ['patch', '--dry-run', '-p1', '-F3', '-t', '--no-backup-if-mismatch'],
+        input=patch_text,
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+    if patch_dry_run.returncode == 0:
+        patch_apply = subprocess.run(
+            ['patch', '-p1', '-F3', '-t', '--no-backup-if-mismatch'],
+            input=patch_text,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        if patch_apply.returncode == 0:
+            return PatchApplicationResult(applied=True)
+        first_error = patch_apply.stderr.strip() or patch_apply.stdout.strip() or first_error
+
+    errors = [
+        first_error,
+        result_3way.stderr.strip() or result_3way.stdout.strip(),
+        patch_dry_run.stderr.strip() or patch_dry_run.stdout.strip(),
+    ]
+    combined_error = '\n\n'.join(error for error in errors if error)
+    rejected = combined_error.count('.rej') + combined_error.count('Rejected hunk')
     return PatchApplicationResult(
         applied=False,
-        error=first_error,
+        error=combined_error or first_error,
         rejected_hunks=rejected,
     )
 

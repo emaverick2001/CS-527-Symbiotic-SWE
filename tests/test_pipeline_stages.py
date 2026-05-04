@@ -8,9 +8,12 @@ from symbiotic_swe.contracts import (
     CounterexampleContract,
     OracleSpec,
     PatchContract,
+    RetrievedContext,
     SolverResultContract,
     TaskMetadata,
 )
+from symbiotic_swe.context_selection.selector import load_context_source
+from symbiotic_swe.dataset.repo_indexer import apply_patch_to_repository
 from symbiotic_swe.evaluation.test_runner import evaluate_task_tests
 from symbiotic_swe.feedback.critique import build_critique
 from symbiotic_swe.orchestration.runner import run_benchmark
@@ -112,6 +115,8 @@ def test_prompt_builder_includes_symbolic_critique(tmp_path: Path) -> None:
 
     assert 'Symbolic Verifier Feedback' in messages[0]['content']
     assert 'values = []' in messages[0]['content']
+    assert 'git-style unified diff' in messages[0]['content']
+    assert 'checked-out repository' in messages[0]['content']
 
 
 def test_patch_parser_extracts_last_diff_block() -> None:
@@ -121,6 +126,58 @@ def test_patch_parser_extracts_last_diff_block() -> None:
 
     assert parsed.startswith('diff --git a/pkg/logic.py b/pkg/logic.py')
     assert '+    if len(values) == 0:' in parsed
+
+
+def test_patch_parser_adds_missing_git_headers() -> None:
+    raw = """```diff
+--- a/pkg/logic.py
++++ b/pkg/logic.py
+@@ -1,2 +1,4 @@
+ def first(values):
++    if len(values) == 0:
++        return None
+     return values[0]
+```"""
+
+    parsed = _extract_diff(raw)
+
+    assert parsed.startswith('diff --git a/pkg/logic.py b/pkg/logic.py')
+    assert '--- a/pkg/logic.py\n+++ b/pkg/logic.py' in parsed
+
+
+def test_context_source_includes_exact_traceback_window(tmp_path: Path) -> None:
+    repo = _fixture_repo(tmp_path)
+    task = _task(repo).model_copy(update={
+        'bug_description': 'Traceback points at pkg/logic.py:2 when values is empty.'
+    })
+
+    context = load_context_source(
+        task,
+        RetrievedContext(task_id=task.task_id, query='', files=[], symbols=[]),
+        repo,
+    )
+
+    assert '# File: pkg/logic.py' in context
+    assert 'Exact checked-out source lines' in context
+    assert 'return values[0]' in context
+
+
+def test_patch_application_tolerates_offset_hunk(tmp_path: Path) -> None:
+    repo = _fixture_repo(tmp_path)
+    offset_diff = """diff --git a/pkg/logic.py b/pkg/logic.py
+--- a/pkg/logic.py
++++ b/pkg/logic.py
+@@ -20,2 +20,4 @@
+ def first(values):
++    if len(values) == 0:
++        return None
+     return values[0]
+"""
+
+    result = apply_patch_to_repository(repo, offset_diff)
+
+    assert result.applied is True
+    assert 'return None' in (repo / 'pkg' / 'logic.py').read_text(encoding='utf-8')
 
 
 def test_slicing_and_solver_find_then_clear_index_risk(tmp_path: Path) -> None:
@@ -181,6 +238,54 @@ def test_evaluate_task_tests_records_true_resolution(tmp_path: Path) -> None:
     )
     resolved = evaluate_task_tests(repo, task, iteration=1)
     assert resolved.resolved is True
+
+
+def test_evaluate_task_tests_applies_oracle_test_patch(tmp_path: Path) -> None:
+    repo = tmp_path / 'repo'
+    (repo / 'pkg').mkdir(parents=True)
+    (repo / 'tests').mkdir()
+    (repo / 'pkg' / '__init__.py').write_text('', encoding='utf-8')
+    (repo / 'pkg' / 'logic.py').write_text('def first(values):\n    return values[0]\n', encoding='utf-8')
+    (repo / 'tests' / 'test_logic.py').write_text(
+        'from pkg.logic import first\n\n'
+        'def test_nonempty():\n'
+        '    assert first([7]) == 7\n',
+        encoding='utf-8',
+    )
+    _git(repo, 'init')
+    _git(repo, 'config', 'user.email', 'fixture@example.com')
+    _git(repo, 'config', 'user.name', 'Fixture User')
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-m', 'fixture')
+
+    test_patch = """diff --git a/tests/test_logic.py b/tests/test_logic.py
+--- a/tests/test_logic.py
++++ b/tests/test_logic.py
+@@ -2,5 +2,8 @@
+ 
++def test_empty():
++    assert first([]) is None
++
+ def test_nonempty():
+     assert first([7]) == 7
+"""
+    task = CanonicalTask(
+        task_id='fixture__first-1',
+        repo='fixture/repo',
+        repo_commit=_git(repo, 'rev-parse', 'HEAD'),
+        repo_path=str(repo),
+        bug_description='first([]) raises IndexError instead of returning None.',
+        failing_tests=['tests/test_logic.py::test_empty'],
+        oracle=OracleSpec(type='tests', spec={'test_patch': test_patch}),
+        metadata=TaskMetadata(dataset='synthetic', logic_heavy=True, repo_name='repo'),
+    )
+
+    result = evaluate_task_tests(repo, task, iteration=0)
+
+    assert result.evaluated is True
+    assert result.fail_to_pass.returncode == 1
+    assert 'not found' not in result.fail_to_pass.stderr
+    assert 'def test_empty' in (repo / 'tests' / 'test_logic.py').read_text(encoding='utf-8')
 
 
 def test_synthetic_cegf_pipeline_writes_run_artifacts(tmp_path: Path, monkeypatch) -> None:

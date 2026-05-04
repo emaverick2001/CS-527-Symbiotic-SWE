@@ -68,6 +68,18 @@ def _api_key_from_env(provider: str) -> str | None:
     return os.environ.get('ANTHROPIC_API_KEY')
 
 
+def _repo_preflight_failure(task_id: str, repo_path: Path) -> str | None:
+    if not repo_path.exists():
+        return f'{task_id}: repo_path does not exist: {repo_path}'
+    if not repo_path.is_dir():
+        return f'{task_id}: repo_path is not a directory: {repo_path}'
+    if not (repo_path / '.git').exists():
+        return f'{task_id}: repo_path is not a git checkout: {repo_path}'
+    if not any(repo_path.iterdir()):
+        return f'{task_id}: repo_path is empty: {repo_path}'
+    return None
+
+
 def _preflight_smoke(
     *,
     prepared_dir: Path,
@@ -90,8 +102,9 @@ def _preflight_smoke(
             missing_repos.append(f'{task.task_id}: missing repo_path')
             continue
         repo_path = Path(task.repo_path)
-        if not repo_path.exists():
-            missing_repos.append(f'{task.task_id}: repo_path does not exist: {repo_path}')
+        repo_failure = _repo_preflight_failure(task.task_id, repo_path)
+        if repo_failure:
+            missing_repos.append(repo_failure)
     failures.extend(missing_repos)
 
     if not api_key:
