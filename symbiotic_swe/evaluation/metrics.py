@@ -20,6 +20,8 @@ def aggregate_metrics(results_by_condition: Dict[str, List[RunMetrics]]) -> Dict
 
         n = len(runs)
         successes = [r for r in runs if r.success]
+        test_evaluated = [r for r in runs if r.test_evaluated]
+        test_resolved = [r for r in runs if r.test_resolved]
         resolution_rate = len(successes) / n
 
         iterations = [r.total_iterations for r in runs]
@@ -52,6 +54,8 @@ def aggregate_metrics(results_by_condition: Dict[str, List[RunMetrics]]) -> Dict
         summary[condition] = {
             'n_tasks': n,
             'bug_resolution_rate': round(resolution_rate, 4),
+            'test_evaluated_tasks': len(test_evaluated),
+            'test_resolution_rate': round(len(test_resolved) / len(test_evaluated), 4) if test_evaluated else 0.0,
             'avg_iterations': round(_safe_mean(iterations), 2),
             'avg_tokens': round(_safe_mean(tokens), 1),
             'tokens_per_success': round(tps, 6),

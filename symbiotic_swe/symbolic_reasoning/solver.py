@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Symbolic verification via Z3.
 
@@ -12,13 +10,13 @@ Strategy:
      unsat (no violation found), unknown, or not_applicable.
 """
 
+from __future__ import annotations
+
 import ast
 import signal
 import time
 import uuid
-from typing import Any, Dict, List, Optional
-
-_SNIPPET_CHAR_LIMIT = 20_000  # skip heuristics on functions larger than this
+from typing import Any, Dict, Optional
 
 from symbiotic_swe.contracts import (
     CanonicalTask,
@@ -26,6 +24,8 @@ from symbiotic_swe.contracts import (
     ProgramSlice,
     SolverResultContract,
 )
+
+_SNIPPET_CHAR_LIMIT = 20_000  # skip heuristics on functions larger than this
 
 
 # ---------------------------------------------------------------------------

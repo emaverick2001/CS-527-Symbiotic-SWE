@@ -40,8 +40,8 @@ def _fix_hunk_counts(diff: str) -> str:
                     break
                 hunk.append(hl)
                 i += 1
-            old_count = sum(1 for l in hunk if l.startswith(' ') or l.startswith('-'))
-            new_count = sum(1 for l in hunk if l.startswith(' ') or l.startswith('+'))
+            old_count = sum(1 for line in hunk if line.startswith(' ') or line.startswith('-'))
+            new_count = sum(1 for line in hunk if line.startswith(' ') or line.startswith('+'))
             result.append(f'@@ -{old_start},{old_count} +{new_start},{new_count} {m.group(5).lstrip()}')
             result.extend(hunk)
         else:

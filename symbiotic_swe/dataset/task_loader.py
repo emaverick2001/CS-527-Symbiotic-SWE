@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 # allow running as a script
 if __package__ in {None, ''}:
@@ -11,7 +11,6 @@ if __package__ in {None, ''}:
 
 from src.dataset.task_loader import (
     PREFERRED_REPOS,
-    REPO_FILTER_MODES,
     CandidateTask,
     RawTaskError,
     TaskObject,

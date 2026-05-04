@@ -9,7 +9,10 @@ description = "CS-527 Symbiotic SWE Project"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
 dependencies = [
+    "anthropic>=0.64.0",
     "pydantic>=2.8.2",
+    "pytest>=8.2.2",
+    "z3-solver>=4.13.0",
     "mypy>=1.10.1",
     "beartype>=0.17.2",
 ]

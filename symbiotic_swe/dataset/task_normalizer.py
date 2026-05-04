@@ -28,6 +28,8 @@ def _build_oracle(candidate: CandidateTask) -> OracleSpec | None:
         spec['gold_patch'] = raw.patch
     if raw.test_patch:
         spec['test_patch'] = raw.test_patch
+    if raw.passing_tests:
+        spec['passing_tests'] = list(raw.passing_tests)
     if raw.constraint_spec is not None:
         spec['constraint_spec'] = raw.constraint_spec
 

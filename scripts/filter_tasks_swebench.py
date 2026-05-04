@@ -7,14 +7,13 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 # ensure src/ is importable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 from src.dataset.task_loader import (
     PREFERRED_REPOS,
-    balanced_take as _balanced_take,
     changed_files,
     collect_hits,
     count_changed_lines,

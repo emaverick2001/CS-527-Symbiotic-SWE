@@ -6,16 +6,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from symbiotic_swe.contracts import CanonicalTask, PreparedTaskArtifact
+from symbiotic_swe.contracts import PreparedTaskArtifact
 from symbiotic_swe.dataset.repo_indexer import RepositoryIndexer, RepositoryIndexerConfig
-from symbiotic_swe.dataset.task_loader import TaskLoader, TaskLoaderConfig, load_raw_swe_bench_tasks
+from symbiotic_swe.dataset.task_loader import TaskLoader, TaskLoaderConfig
 from symbiotic_swe.dataset.task_normalizer import TaskNormalizer
 from src.dataset.task_loader import (
     PREFERRED_REPOS,
     CandidateTask,
     RawTaskError,
     TaskObject,
-    raw_subset_rows,
 )
 from src.dataset.dataset_writer import write_jsonl
 
@@ -105,7 +104,6 @@ def _write_failure_logs(
             for f in a.repo_index.files:
                 if f.parse_failed:
                     parse_fails.append({'task_id': a.task.task_id, 'file': f.path})
-    all_artifacts = []
     write_jsonl(logs_dir / 'repo_parse_failures.jsonl', parse_fails)
 
 

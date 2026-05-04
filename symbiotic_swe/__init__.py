@@ -1,2 +1,1 @@
-"""Compatibility package for the Symbiotic SWE scaffold."""
-
+__version__ = '0.0.1'

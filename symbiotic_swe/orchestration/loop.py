@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Counter-Example Guided Feedback (CEGF) loop.
 
@@ -9,6 +7,8 @@ Conditions:
   neural_solver    - LLM + slicing + solver verification (no feedback to LLM)
   neural_cegf      - Full system: LLM + slicing + solver + critique feedback
 """
+
+from __future__ import annotations
 
 import shutil
 import time
@@ -22,9 +22,11 @@ from symbiotic_swe.contracts import (
     IterationRecord,
     RepoIndex,
     RunMetrics,
+    TestEvaluationResult,
 )
-from symbiotic_swe.context_selection.selector import select_context, load_context_source
+from symbiotic_swe.context_selection.selector import select_context
 from symbiotic_swe.dataset.repo_indexer import apply_patch_to_repository
+from symbiotic_swe.evaluation.test_runner import evaluate_task_tests
 from symbiotic_swe.feedback.critique import build_critique
 from symbiotic_swe.patch_generation.generator import generate_patch
 from symbiotic_swe.slicing.slicer import slice_impact
@@ -42,6 +44,24 @@ def _make_working_copy(repo_path: Path, work_root: Path, task_id: str, run_id: s
 def _reset_working_copy(work_copy: Path, repo_path: Path) -> None:
     shutil.rmtree(work_copy)
     shutil.copytree(repo_path, work_copy)
+
+
+def _record_test_evaluation(
+    *,
+    task: CanonicalTask,
+    record: IterationRecord,
+    metrics: RunMetrics,
+    work_copy: Optional[Path],
+) -> Optional[TestEvaluationResult]:
+    if work_copy is None or not work_copy.exists():
+        return None
+
+    evaluation = evaluate_task_tests(work_copy, task, record.iteration)
+    record.test_evaluation = evaluation
+    metrics.test_evaluated = evaluation.evaluated
+    metrics.test_resolved = evaluation.resolved
+    metrics.final_test_evaluation = evaluation
+    return evaluation
 
 
 def run_cegf_loop(
@@ -119,8 +139,18 @@ def run_cegf_loop(
 
         # ── 3. Neural-only: stop after first successful patch apply ─────────
         if condition == 'neural_only':
-            metrics.success = True
-            metrics.termination_reason = 'neural_only_patch_applied'
+            test_eval = _record_test_evaluation(
+                task=task,
+                record=record,
+                metrics=metrics,
+                work_copy=work_copy,
+            )
+            if test_eval is not None:
+                metrics.success = test_eval.resolved
+                metrics.termination_reason = 'tests_resolved' if test_eval.resolved else 'tests_failed'
+            else:
+                metrics.success = True
+                metrics.termination_reason = 'neural_only_patch_applied_no_test_evaluation'
             record.duration_ms = int((time.time() - t_iter) * 1000)
             metrics.iterations.append(record)
             break
@@ -133,9 +163,18 @@ def run_cegf_loop(
             record.program_slice = program_slice
 
         if condition == 'neural_slicing':
-            # No solver — treat slicing as terminal if patch applied
-            metrics.success = True
-            metrics.termination_reason = 'slicing_only_patch_applied'
+            test_eval = _record_test_evaluation(
+                task=task,
+                record=record,
+                metrics=metrics,
+                work_copy=work_copy,
+            )
+            if test_eval is not None:
+                metrics.success = test_eval.resolved
+                metrics.termination_reason = 'tests_resolved' if test_eval.resolved else 'tests_failed_after_slicing'
+            else:
+                metrics.success = True
+                metrics.termination_reason = 'slicing_only_patch_applied_no_test_evaluation'
             record.duration_ms = int((time.time() - t_iter) * 1000)
             metrics.iterations.append(record)
             break
@@ -151,9 +190,18 @@ def run_cegf_loop(
             metrics.solver_outcomes[status] = metrics.solver_outcomes.get(status, 0) + 1
 
         if solver_result is None or solver_result.status in {'unsat', 'not_applicable', 'unknown', 'timeout', 'error'}:
-            # unsat = solver proved correct; not_applicable/unknown/timeout = can't determine, treat as pass
-            metrics.success = solver_result is None or solver_result.status in {'unsat', 'not_applicable', 'unknown', 'timeout', 'error'}
-            metrics.termination_reason = solver_result.status if solver_result else 'no_slice'
+            test_eval = _record_test_evaluation(
+                task=task,
+                record=record,
+                metrics=metrics,
+                work_copy=work_copy,
+            )
+            if test_eval is not None:
+                metrics.success = test_eval.resolved
+                metrics.termination_reason = 'tests_resolved' if test_eval.resolved else 'tests_failed_after_solver'
+            else:
+                metrics.success = True
+                metrics.termination_reason = solver_result.status if solver_result else 'no_slice'
             record.duration_ms = int((time.time() - t_iter) * 1000)
             metrics.iterations.append(record)
             break

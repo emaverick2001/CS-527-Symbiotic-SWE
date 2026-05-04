@@ -105,8 +105,8 @@ def load_context_source(
                         # Convert line number to char offset
                         start_line = max(0, best.line_start - 1)
                         end_line = min(len(lines), getattr(best, 'line_end', best.line_start))
-                        char_start = sum(len(l) for l in lines[:start_line])
-                        char_end = sum(len(l) for l in lines[:end_line])
+                        char_start = sum(len(line) for line in lines[:start_line])
+                        char_end = sum(len(line) for line in lines[:end_line])
                         # Pad to CONTEXT_WINDOW on each side
                         pad = max(0, (CONTEXT_WINDOW - (char_end - char_start)) // 2)
                         c_start = max(0, char_start - pad)

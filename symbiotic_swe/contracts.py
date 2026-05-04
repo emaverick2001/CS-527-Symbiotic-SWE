@@ -162,6 +162,30 @@ class CritiqueContract(BaseModel):
     source_counterexample_id: Optional[str] = None
 
 
+class TestSuiteResult(BaseModel):
+    name: str
+    tests: List[str] = Field(default_factory=list)
+    command: List[str] = Field(default_factory=list)
+    returncode: Optional[int] = None
+    passed: Optional[bool] = None
+    duration_ms: int = 0
+    stdout: str = ''
+    stderr: str = ''
+    error: Optional[str] = None
+
+
+class TestEvaluationResult(BaseModel):
+    schema_version: str = '0.1.0'
+    task_id: str
+    iteration: int
+    resolved: bool = False
+    evaluated: bool = False
+    fail_to_pass: TestSuiteResult
+    pass_to_pass: TestSuiteResult
+    duration_ms: int = 0
+    error: Optional[str] = None
+
+
 class IterationRecord(BaseModel):
     iteration: int
     patch: Optional[PatchContract] = None
@@ -169,6 +193,7 @@ class IterationRecord(BaseModel):
     solver_result: Optional[SolverResultContract] = None
     counterexample: Optional[CounterexampleContract] = None
     critique: Optional[CritiqueContract] = None
+    test_evaluation: Optional[TestEvaluationResult] = None
     duration_ms: int = 0
 
 
@@ -186,4 +211,7 @@ class RunMetrics(BaseModel):
     solver_outcomes: Dict[str, int] = Field(default_factory=dict)
     patch_apply_failures: int = 0
     repeated_counterexamples: int = 0
+    test_evaluated: bool = False
+    test_resolved: bool = False
+    final_test_evaluation: Optional[TestEvaluationResult] = None
     iterations: List[IterationRecord] = Field(default_factory=list)
