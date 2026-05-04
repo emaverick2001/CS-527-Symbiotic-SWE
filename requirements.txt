@@ -2,7 +2,7 @@
 #    uv pip compile pyproject.toml -o requirements.txt
 annotated-types==0.7.0
     # via pydantic
-beartype==0.17.2
+beartype==0.22.9
     # via symbiotic-swe (pyproject.toml)
 librt==0.9.0
     # via mypy
