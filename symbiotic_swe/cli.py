@@ -68,7 +68,7 @@ def _api_key_from_env(provider: str) -> str | None:
     return os.environ.get('ANTHROPIC_API_KEY')
 
 
-def _repo_preflight_failure(task_id: str, repo_path: Path) -> str | None:
+def _repo_preflight_failure(task_id: str, repo_path: Path, expected_commit: str | None = None) -> str | None:
     if not repo_path.exists():
         return f'{task_id}: repo_path does not exist: {repo_path}'
     if not repo_path.is_dir():
@@ -77,6 +77,20 @@ def _repo_preflight_failure(task_id: str, repo_path: Path) -> str | None:
         return f'{task_id}: repo_path is not a git checkout: {repo_path}'
     if not any(repo_path.iterdir()):
         return f'{task_id}: repo_path is empty: {repo_path}'
+    if expected_commit:
+        import subprocess
+        result = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip()
+            return f'{task_id}: cannot read repo HEAD: {detail}'
+        actual_commit = result.stdout.strip()
+        if actual_commit != expected_commit:
+            return f'{task_id}: repo HEAD {actual_commit} != expected {expected_commit}'
     return None
 
 
@@ -102,7 +116,7 @@ def _preflight_smoke(
             missing_repos.append(f'{task.task_id}: missing repo_path')
             continue
         repo_path = Path(task.repo_path)
-        repo_failure = _repo_preflight_failure(task.task_id, repo_path)
+        repo_failure = _repo_preflight_failure(task.task_id, repo_path, task.repo_commit)
         if repo_failure:
             missing_repos.append(repo_failure)
     failures.extend(missing_repos)
@@ -227,6 +241,45 @@ def cmd_prepare_dataset(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_materialize_repos(args: argparse.Namespace) -> int:
+    from symbiotic_swe.dataset.materialization import (
+        MaterializeReposConfig,
+        materialize_prepared_repos,
+    )
+
+    prepared_dir = Path(args.prepared_dir).resolve() if args.prepared_dir else _default_prepared_dir('smoke')
+    repo_cache_dir = Path(args.repo_cache_dir).resolve()
+    workspace_root = Path(args.workspace_root).resolve()
+    task_ids = set(args.task_ids) if args.task_ids else None
+
+    result = materialize_prepared_repos(
+        MaterializeReposConfig(
+            prepared_dir=prepared_dir,
+            repo_cache_dir=repo_cache_dir,
+            workspace_root=workspace_root,
+            task_ids=task_ids,
+            fetch=args.fetch,
+            force=args.force,
+            dry_run=args.dry_run,
+        )
+    )
+
+    print('Repository materialization')
+    print(f'  prepared_dir:    {prepared_dir}')
+    print(f'  repo_cache_dir:  {repo_cache_dir}')
+    print(f'  workspace_root:  {workspace_root}')
+    print(f'  tasks:           {len(result.results)}')
+    print(f'  dry_run:         {args.dry_run}')
+    print(f'  status_counts:   {result.status_counts}')
+
+    for item in result.results:
+        print(f'  - {item.status}: {item.task_id} {item.repo}@{item.commit[:12]} -> {item.workspace_path}')
+        if item.message:
+            print(f'    {item.message}')
+
+    return 0 if result.ok else 1
+
+
 # ── parsers ─────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -296,6 +349,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_prep.add_argument('--workspace-root')
     p_prep.add_argument('--cache-root')
 
+    # materialize-repos
+    p_mat = sub.add_parser(
+        'materialize-repos',
+        help='Create or repair local git workspaces for prepared tasks',
+    )
+    p_mat.add_argument('--task-id', dest='task_ids', action='append', default=None)
+    p_mat.add_argument('--prepared-dir')
+    p_mat.add_argument('--repo-cache-dir', default=str(_project_root() / 'data' / 'repo_cache'))
+    p_mat.add_argument('--workspace-root', default=str(_project_root() / 'data' / 'prepared' / 'workspaces'))
+    p_mat.add_argument('--fetch', action='store_true', help='Fetch existing mirror caches before creating worktrees')
+    p_mat.add_argument('--force', action='store_true', help='Replace existing wrong or non-empty task workspaces')
+    p_mat.add_argument('--dry-run', action='store_true', help='Print planned clone/worktree actions without changing files')
+
     return parser
 
 
@@ -314,6 +380,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_run_benchmark(args)
     if args.command == 'prepare-dataset':
         return cmd_prepare_dataset(args)
+    if args.command == 'materialize-repos':
+        return cmd_materialize_repos(args)
     parser.print_help()
     return 1
 

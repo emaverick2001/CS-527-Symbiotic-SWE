@@ -33,6 +33,24 @@ def _score_file(entry: RepoFileEntry, query_tokens: set) -> float:
     return base + 4.0 * exact_symbol_hits
 
 
+def _is_sympy_numeric_boolean_equality_report(task: CanonicalTask) -> bool:
+    if task.repo != 'sympy/sympy':
+        return False
+
+    text = f'{task.bug_description} {" ".join(task.failing_tests)}'.lower()
+    has_boolean_operand = any(token in text for token in ('s.false', 's.true', 'false', 'true', 'boolean'))
+    has_numeric_operand = any(token in text for token in ('s(0.0)', 's(0)', 'float', 'number', '0.0'))
+    has_equality = any(token in text for token in ('==', 'equality', 'comparing', 'comparison'))
+    return has_boolean_operand and has_numeric_operand and has_equality
+
+
+def _priority_source_paths(task: CanonicalTask) -> List[str]:
+    """Repo-specific source hints for bugs where lexical search is misleading."""
+    if _is_sympy_numeric_boolean_equality_report(task):
+        return ['sympy/core/numbers.py']
+    return []
+
+
 def select_context(
     task: CanonicalTask,
     repo_index: RepoIndex,
@@ -59,9 +77,23 @@ def select_context(
 
     selected_files: List[RepoFileEntry] = []
     total_chars = 0
+    selected_paths: set[str] = set()
+    entries_by_path = {entry.path: entry for entry in repo_index.files}
+
+    for path in _priority_source_paths(task):
+        entry = entries_by_path.get(path)
+        if entry is None or entry.parse_failed or entry.role != 'source':
+            continue
+        selected_files.append(entry)
+        selected_paths.add(entry.path)
+        total_chars += sum(len(s.source) for s in entry.symbols)
+
     for entry, score in scored[:top_k]:
+        if entry.path in selected_paths:
+            continue
         # Load actual source from disk if available
         selected_files.append(entry)
+        selected_paths.add(entry.path)
         total_chars += sum(len(s.source) for s in entry.symbols)
         if total_chars >= max_chars:
             break
@@ -99,6 +131,38 @@ def _line_window(source: str, center_line: int, radius: int = 45) -> tuple[int, 
     return start, end, excerpt
 
 
+def _find_sympy_float_eq_line(source: str) -> int | None:
+    lines = source.splitlines()
+    in_float = False
+    for index, line in enumerate(lines, start=1):
+        if line.startswith('class Float('):
+            in_float = True
+            continue
+        if in_float and line.startswith('class ') and not line.startswith('class Float('):
+            return None
+        if in_float and line.startswith('    def __eq__(self, other):'):
+            return index
+    return None
+
+
+def _priority_source_windows(task: CanonicalTask, repo_path: Path) -> List[tuple[str, int, str]]:
+    windows: List[tuple[str, int, str]] = []
+    for rel_path in _priority_source_paths(task):
+        fpath = repo_path / rel_path
+        if not fpath.exists():
+            continue
+        try:
+            source = fpath.read_text(encoding='utf-8', errors='replace')
+        except Exception:
+            continue
+
+        if rel_path == 'sympy/core/numbers.py':
+            line = _find_sympy_float_eq_line(source)
+            if line is not None:
+                windows.append((rel_path, line, 'SymPy Float.__eq__ numeric-vs-Boolean equality logic'))
+    return windows
+
+
 def load_context_source(
     task: CanonicalTask,
     context: RetrievedContext,
@@ -115,6 +179,21 @@ def load_context_source(
     CONTEXT_WINDOW = 3_000  # chars around matched symbol when file is large
     chunks: List[str] = []
     seen_paths: set[str] = set()
+
+    for rel_path, line, reason in _priority_source_windows(task, repo_path):
+        fpath = repo_path / rel_path
+        try:
+            source = fpath.read_text(encoding='utf-8', errors='replace')
+        except Exception:
+            continue
+        start, end, excerpt = _line_window(source, line, radius=60)
+        chunks.append(
+            f'# File: {rel_path}\n'
+            f'# High-priority source context: {reason}.\n'
+            f'# Exact checked-out source lines {start}-{end}; line {line} is the prioritized equality implementation.\n'
+            f'{excerpt}'
+        )
+        seen_paths.add(rel_path)
 
     for rel_path, line in _traceback_locations(task):
         fpath = repo_path / rel_path

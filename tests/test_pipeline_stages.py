@@ -8,11 +8,13 @@ from symbiotic_swe.contracts import (
     CounterexampleContract,
     OracleSpec,
     PatchContract,
+    RepoFileEntry,
+    RepoIndex,
     RetrievedContext,
     SolverResultContract,
     TaskMetadata,
 )
-from symbiotic_swe.context_selection.selector import load_context_source
+from symbiotic_swe.context_selection.selector import load_context_source, select_context
 from symbiotic_swe.dataset.repo_indexer import apply_patch_to_repository
 from symbiotic_swe.evaluation.test_runner import evaluate_task_tests
 from symbiotic_swe.feedback.critique import build_critique
@@ -160,6 +162,63 @@ def test_context_source_includes_exact_traceback_window(tmp_path: Path) -> None:
     assert '# File: pkg/logic.py' in context
     assert 'Exact checked-out source lines' in context
     assert 'return values[0]' in context
+
+
+def test_sympy_numeric_boolean_report_prioritizes_numbers_context(tmp_path: Path) -> None:
+    repo = tmp_path / 'repo'
+    (repo / 'sympy' / 'core').mkdir(parents=True)
+    (repo / 'sympy' / 'logic').mkdir(parents=True)
+    numbers_source = '\n'.join(
+        [
+            'class Integer:',
+            '    pass',
+            '',
+            'class Float(Number):',
+            '    def __eq__(self, other):',
+            '        from sympy.logic.boolalg import Boolean',
+            '        if not self:',
+            '            return not other',
+            '        if isinstance(other, Boolean):',
+            '            return False',
+            '        return False',
+            '',
+        ]
+    )
+    boolalg_source = '\n'.join(
+        [
+            'class BooleanAtom:',
+            '    def _do_eq_sympify(self, other):',
+            '        return self == other',
+            '',
+        ]
+    )
+    (repo / 'sympy' / 'core' / 'numbers.py').write_text(numbers_source, encoding='utf-8')
+    (repo / 'sympy' / 'logic' / 'boolalg.py').write_text(boolalg_source, encoding='utf-8')
+    task = CanonicalTask(
+        task_id='sympy__sympy-20801',
+        repo='sympy/sympy',
+        repo_commit='abc123',
+        repo_path=str(repo),
+        bug_description='S(0.0) == S.false returns True but numeric equality should return False.',
+        failing_tests=['test_zero_not_false'],
+        metadata=TaskMetadata(dataset='synthetic', logic_heavy=True, repo_name='sympy'),
+    )
+    repo_index = RepoIndex(
+        repo='sympy/sympy',
+        index_path='memory',
+        files=[
+            RepoFileEntry(path='sympy/logic/boolalg.py', role='source'),
+            RepoFileEntry(path='sympy/core/numbers.py', role='source'),
+        ],
+    )
+
+    context = select_context(task, repo_index)
+    source = load_context_source(task, context, repo)
+
+    assert context.files[0].path == 'sympy/core/numbers.py'
+    assert '# High-priority source context: SymPy Float.__eq__ numeric-vs-Boolean equality logic.' in source
+    assert 'if isinstance(other, Boolean):' in source
+    assert 'sympy/logic/boolalg.py' in source
 
 
 def test_patch_application_tolerates_offset_hunk(tmp_path: Path) -> None:

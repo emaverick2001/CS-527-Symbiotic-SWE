@@ -785,10 +785,31 @@
      - verify artifacts are written correctly
    - Preconditions:
      - prepared smoke tasks exist under `data/prepared/prepared/smoke`
-     - repo paths in each `task.json` point to existing local repositories
+     - local task workspaces exist under `data/prepared/workspaces/{task_id}/repo`
+     - each local task workspace is a git checkout at the task's `repo_commit`
      - one model API key is set:
        - `OPENAI_API_KEY` for `--provider openai`
        - `ANTHROPIC_API_KEY` for `--provider anthropic`
+   - Materialize or repair smoke repositories:
+
+     ```bash
+     scripts/materialize_smoke_repos.sh
+     ```
+
+   - Dry-run materialization first:
+
+     ```bash
+     DRY_RUN=1 scripts/materialize_smoke_repos.sh
+     ```
+
+   - Force-repair one stale or empty task workspace:
+
+     ```bash
+     TASK_ID=sympy__sympy-20801 \
+     FORCE=1 \
+     scripts/materialize_smoke_repos.sh
+     ```
+
    - Preflight command:
 
      ```bash

@@ -12,6 +12,7 @@ def test_cli_exposes_all_execution_modes() -> None:
     ablation_args = parser.parse_args(
         ['ablation', '--ablation-name', 'no-symbolic', '--task-id', 'bug-001']
     )
+    materialize_args = parser.parse_args(['materialize-repos', '--task-id', 'bug-001'])
 
     assert task_args.command == 'task'
     assert smoke_args.command == 'smoke'
@@ -19,6 +20,8 @@ def test_cli_exposes_all_execution_modes() -> None:
     assert benchmark_args.command == 'benchmark'
     assert benchmark_args.task_ids == ['bug-001', 'bug-002']
     assert ablation_args.command == 'ablation'
+    assert materialize_args.command == 'materialize-repos'
+    assert materialize_args.task_ids == ['bug-001']
     assert smoke_args.provider == 'openai'
     assert smoke_args.model == 'gpt-5.4-mini'
 
