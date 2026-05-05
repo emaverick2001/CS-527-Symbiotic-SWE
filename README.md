@@ -1,236 +1,196 @@
-# CS-527-Symbiotic-SWE
+# CS-527 Symbiotic SWE
 
-- Integrating Symbolic Solvers into the Agentic Debugging Loop.
+Symbiotic-SWE is a neuro-symbolic software repair pipeline for logic-heavy SWE-bench-style tasks. It combines neural patch generation with optional impact slicing, symbolic checking, counterexample-guided feedback, and real pytest evaluation.
 
-## Overview
+The current project is past scaffold mode: the CLI can run smoke experiments, ablations, materialize prepared repositories, apply generated patches, run `FAIL_TO_PASS` and `PASS_TO_PASS` tests, and write structured artifacts for analysis.
 
-This repository is the implementation scaffold for a neuro-symbolic software repair system. The pipeline is organized around the proposal’s core flow:
+## Pipeline
 
-- dataset preparation
-- context selection
-- patch generation
-- slicing
-- symbolic reasoning
-- feedback transformation
-- evaluation
+The implemented repair loop is:
 
-The execution controller still runs the current scaffold through these concrete run stages:
+1. Load a prepared `CanonicalTask`.
+2. Select repository context from the checked-out task repo.
+3. Generate a git-style patch with a configurable model provider.
+4. Apply the patch to a disposable working copy.
+5. Optionally run impact slicing.
+6. Optionally run symbolic verification.
+7. Optionally convert counterexamples or pytest failures into critique feedback.
+8. Run real task tests.
+9. Write metrics, patch manifests, solver results, test verdicts, and summary artifacts.
 
-- pipeline orchestration
-- retrieval/context selection
-- patch generation
-- slicing
-- symbolic reasoning
-- evaluation
+Supported experiment conditions:
 
-The current codebase defines the repository layout, execution entrypoints, run/workspace conventions, cache locations, logging locations, and version-tracking metadata that later stages will build on.
+- `neural_only`: model patch generation plus real test evaluation.
+- `neural_slicing`: patch generation plus impact slicing.
+- `neural_solver`: patch generation, slicing, and solver checking without feedback.
+- `neural_cegf`: full counterexample-guided feedback loop.
 
 ## Setup
 
-### Local Poetry + venv
+Use Python 3.11 and `uv`.
 
 ```bash
 git clone https://github.com/emaverick2001/CS-527-Symbiotic-SWE.git
 cd CS-527-Symbiotic-SWE
 
-# Make sure Python 3.11 is available
-python3.11 --version
-# if not
-brew install python@3.11
-
-# If Poetry is not installed, install it
-brew install poetry
-
-# Create an in-project virtual environment
-poetry config virtualenvs.in-project true
-poetry env use python3.11
-poetry install
-
-# Activate the environment
+uv sync --extra dev --extra swebench
 source .venv/bin/activate
-
-# Install git hooks
-pre-commit install
-
-# Sanity checks
-poetry run pytest
-poetry run ruff check .
-poetry run mypy .
 ```
 
-### Reproducible Docker Path
+Set one model API key:
 
 ```bash
-docker build -t symbiotic-swe .
-docker run --rm -it symbiotic-swe
+export OPENAI_API_KEY=...
+# or
+export ANTHROPIC_API_KEY=...
 ```
 
-## Running The Scaffold
-
-Real patch generation defaults to the OpenAI Responses API. Set `OPENAI_API_KEY`, or pass `--api-key`; use `--provider` and `--model` to compare repair agents.
+Sanity checks:
 
 ```bash
-# Single-task execution
-uv run symbiotic-swe task --task-id demo-task --max-iterations 2
-
-# Smoke execution
-uv run symbiotic-swe smoke --prepared-dir data/prepared/prepared/smoke
-
-# Smoke model ablation
-MODELS="openai:gpt-5.4-mini openai:gpt-5.5 openai:gpt-5.3-codex" \
-  scripts/run_model_ablation.sh
-
-# Benchmark execution
-uv run symbiotic-swe benchmark --prepared-dir data/prepared/prepared/dev
-
-# Ablation execution
-uv run symbiotic-swe ablation --prepared-dir data/prepared/prepared/dev
+uv run --extra dev pytest -q
+uv run --extra dev ruff check .
 ```
 
-## Downloading SWE-bench
+## Preparing Repositories
 
-SWE-bench is hosted on Hugging Face. The official dataset cards list:
+Prepared task JSON files live under:
 
-- `princeton-nlp/SWE-bench`
-- `princeton-nlp/SWE-bench_Lite`
-- `princeton-nlp/SWE-bench_Verified`
+```text
+data/prepared/prepared/<split>/<task_id>/task.json
+```
 
-Install the Hugging Face datasets client in your project environment:
+The CLI expects each task to point to a local git checkout. Use materialization to create or repair reusable workspaces:
 
 ```bash
-poetry run pip install datasets
+uv run --extra swebench symbiotic-swe materialize-repos \
+  --prepared-dir data/prepared/prepared/dev \
+  --repo-cache-dir data/repo_cache \
+  --workspace-root data/prepared/workspaces \
+  --force
 ```
 
-Download the recommended verified subset into this repo:
+For a task subset, repeat `--task-id`:
 
 ```bash
-poetry run python scripts/download_swe_bench.py --preset verified
+uv run --extra swebench symbiotic-swe materialize-repos \
+  --prepared-dir data/prepared/prepared/dev \
+  --repo-cache-dir data/repo_cache \
+  --workspace-root data/prepared/workspaces \
+  --force \
+  --task-id sympy__sympy-13031 \
+  --task-id sympy__sympy-15875
 ```
 
-Download the Lite subset:
+## Running Experiments
+
+One-task smoke check:
 
 ```bash
-poetry run python scripts/download_swe_bench.py --preset lite
+TASK_ID=sympy__sympy-20801 \
+CONDITIONS=neural_cegf \
+MODEL=gpt-5.3-codex \
+MAX_ITERATIONS=1 \
+scripts/run_one_task_smoke.sh
 ```
 
-Download the full benchmark:
+Smoke split:
 
 ```bash
-poetry run python scripts/download_swe_bench.py --preset full
+PROVIDER=openai \
+MODEL=gpt-5.3-codex \
+CONDITIONS=neural_only,neural_cegf \
+MAX_ITERATIONS=1 \
+scripts/run_smoke.sh
 ```
 
-By default this writes:
+Main SymPy dev ablation used for the latest paper tables:
 
-- benchmark files to `data/benchmarks/swe_bench/<preset>/`
-- Hugging Face cache files to `artifacts/cache/huggingface/datasets/`
+```bash
+uv run --extra swebench symbiotic-swe ablation \
+  --prepared-dir data/prepared/prepared/dev \
+  --output-dir artifacts/runs/dev_ablation_gpt_5_3_codex_sympy_real_tests_v4 \
+  --provider openai \
+  --model gpt-5.3-codex \
+  --max-iterations 3 \
+  --task-id sympy__sympy-13031 \
+  --task-id sympy__sympy-15875 \
+  --task-id sympy__sympy-17318 \
+  --task-id sympy__sympy-19346 \
+  --task-id sympy__sympy-23413 \
+  --task-id sympy__sympy-24213 \
+  --task-id sympy__sympy-24539
+```
 
-If you only want one split, pass `--split test` or another split name.
+## Current Result Artifact
 
-## Repository Structure
-
-- `symbiotic_swe/`
-  - single runtime package for dataset preparation, context selection, patch generation, slicing, symbolic reasoning, feedback, orchestration, and evaluation
-- `configs/`
-  - default, task, smoke, benchmark, and ablation configs
-- `data/tasks/`
-  - single-task inputs
-- `data/raw/`
-  - raw imported datasets or repo snapshots
-- `data/processed/`
-  - normalized task manifests and derived inputs
-- `data/benchmarks/`
-  - benchmark manifests
-- `artifacts/runs/`
-  - persistent run artifacts
-- `artifacts/logs/`
-  - run-level logs
-- `artifacts/patches/`
-  - exported patch bundles and summaries
-- `artifacts/solver_outputs/`
-  - exported solver outputs outside per-run folders when needed
-- `artifacts/cache/`
-  - reusable caches
-- `artifacts/workspaces/`
-  - temporary per-task working repos
-- `docs/`
-  - proposal and developer-facing design notes
-- `tests/`
-  - smoke tests for the scaffold contract
-
-## Artifact And Working Directory Layout
-
-Temporary repository checkouts live at:
+The latest clean run is:
 
 ```text
-artifacts/workspaces/<run_id>/<task_id>/repo/
+artifacts/runs/dev_ablation_gpt_5_3_codex_sympy_real_tests_v4
 ```
 
-Persistent task artifacts live at:
+High-level result:
 
-```text
-artifacts/runs/<run_id>/tasks/<task_id>/
-```
+| Condition | Real Test Success | Resolved Tasks |
+| --- | ---: | ---: |
+| `neural_only` | 4/7 | 4 |
+| `neural_slicing` | 6/7 | 6 |
+| `neural_solver` | 2/7 | 2 |
+| `neural_cegf` | 3/7 | 3 |
 
-Per-iteration stage artifacts live at:
+Interpretation:
 
-```text
-artifacts/runs/<run_id>/tasks/<task_id>/iterations/iter_000/<stage>/
-```
+- `neural_slicing` is the strongest raw real-test performer on this SymPy dev subset.
+- `neural_cegf` provides solver-backed logical correctness and richer diagnostics, but at higher token cost.
+- `neural_solver` shows that symbolic checking without feedback is not enough.
 
-Run-level logs live at:
+See:
 
-```text
-artifacts/logs/<run_id>/
-```
+- `docs/experiments.md`
+- `docs/Key_Observations.md`
+- `docs/Figures.md`
+- `docs/high_low_pipeline.MD`
 
-Run-level caches live at:
+## Artifacts
 
-```text
-artifacts/cache/<run_id>/
-```
+Each run directory contains:
 
-Task-level observability logs live at:
+- `run_manifest.json`: provider, model, conditions, task IDs, and run timing.
+- `metrics.json`: aggregate metrics by condition.
+- `evaluation_results.jsonl`: real pytest verdicts.
+- `patch_manifest.json`: generated patch metadata and apply status.
+- `solver_results.jsonl`: solver outcomes and counterexample-related records.
+- `stage_timings.csv`: per-iteration timing.
+- `errors.log`: human-readable failures.
+- `<condition>/<task_id>/metrics.json`: per-task metrics.
 
-```text
-artifacts/runs/<run_id>/tasks/<task_id>/logs/
-```
+Generated run artifacts are intentionally ignored by git unless explicitly selected for reporting.
 
-This includes:
+## Repository Layout
 
-- `task.log`
-- `solver/solver.log`
-- `patches/patch.log`
-- `errors/errors.log`
-- `failures/patch_apply_failure.jsonl`
-- `failures/ast_parse_failure.jsonl`
-- `failures/solver_timeout.jsonl`
-- `failures/unsupported_symbolic_construct.jsonl`
+- `symbiotic_swe/`: runtime package.
+- `symbiotic_swe/context_selection/`: context retrieval and task-specific source selection.
+- `symbiotic_swe/patch_generation/`: prompt construction, model calls, diff parsing, and patch repair retry.
+- `symbiotic_swe/slicing/`: impact slicing.
+- `symbiotic_swe/symbolic_reasoning/`: solver integration and counterexample extraction.
+- `symbiotic_swe/feedback/`: critique generation.
+- `symbiotic_swe/evaluation/`: pytest execution and metrics aggregation.
+- `symbiotic_swe/orchestration/`: experiment loop and run artifact writing.
+- `scripts/`: smoke/model/materialization helpers.
+- `configs/`: experiment and evaluation configs.
+- `data/prepared/`: prepared task manifests and local task workspaces.
+- `data/repo_cache/`: reusable git cache for materialized repositories.
+- `artifacts/runs/`: generated experiment runs.
+- `docs/`: pipeline notes, experimental observations, and paper planning.
+- `tests/`: unit and synthetic end-to-end tests.
 
-The cache tree is split into:
+## Development Notes
 
-- `parsed_repo_indexes/`
-- `retrieval_embeddings/`
-- `retrieved_context/`
-- `solver_outputs/`
-- `prompt_outputs/`
+- Primary dependency file: `pyproject.toml`.
+- Lockfile: `uv.lock`.
+- Runtime package layout is top-level `symbiotic_swe/`.
+- Python target: 3.11.
+- SWE-bench support dependencies are installed with `--extra swebench`.
 
-Cache invalidation rules are documented in [docs/CACHING.md](/Users/maver/Desktop/Coding%20Projects/AI/CS-527-Symbiotic-SWE/docs/CACHING.md) and encoded in the `[cache_policy]` section of the default config.
-
-## Version Tracking
-
-Each run metadata file records:
-
-- Python version constraint
-- dependency manifest path
-- dependency lockfile path
-- prompt version
-- schema version
-
-## Developer Notes
-
-- Main dependency manifest: `pyproject.toml`
-- Locked dependency versions: `poetry.lock`
-- Local environment path: `.venv/`
-- Container environment: `Dockerfile`
-- Additional structure notes: [docs/REPO_STRUCTURE.md](/Users/maver/Desktop/Coding%20Projects/AI/CS-527-Symbiotic-SWE/docs/REPO_STRUCTURE.md)
-- Environment notes: [docs/ENVIRONMENT.md](/Users/maver/Desktop/Coding%20Projects/AI/CS-527-Symbiotic-SWE/docs/ENVIRONMENT.md)
+Avoid committing local caches, virtual environments, generated repo workspaces, and bulk run artifacts.
