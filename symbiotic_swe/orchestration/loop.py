@@ -29,7 +29,7 @@ from symbiotic_swe.context_selection.selector import select_context
 from symbiotic_swe.dataset.repo_indexer import apply_patch_to_repository
 from symbiotic_swe.evaluation.test_runner import evaluate_task_tests
 from symbiotic_swe.feedback.critique import build_critique
-from symbiotic_swe.patch_generation.generator import generate_patch
+from symbiotic_swe.patch_generation.generator import generate_patch, repair_patch_application
 from symbiotic_swe.slicing.slicer import slice_impact
 from symbiotic_swe.symbolic_reasoning.solver import extract_counterexample, run_solver
 
@@ -78,6 +78,37 @@ def _check_patch_syntax(repo_path: Path, target_files: list[str]) -> tuple[bool,
         except Exception as exc:
             errors.append(f'{rel_path}: syntax check failed: {exc}')
     return (not errors if checked else True), errors
+
+
+def _build_test_failure_critique(
+    task: CanonicalTask,
+    evaluation: TestEvaluationResult,
+    iteration: int,
+) -> CritiqueContract:
+    f2p = evaluation.fail_to_pass
+    stderr = (f2p.stderr or '').strip()
+    stdout = (f2p.stdout or '').strip()
+    output = stderr or stdout or f2p.error or 'pytest failed without captured output'
+    output = output[-4000:]
+    return CritiqueContract(
+        critique_id=str(uuid.uuid4())[:8],
+        task_id=task.task_id,
+        iteration=iteration,
+        short_text=(
+            f'Your patch from iteration {iteration} applied, but the real FAIL_TO_PASS tests still failed.\n'
+            f'Tests: {", ".join(f2p.tests) if f2p.tests else "unknown"}\n'
+            f'Pytest return code: {f2p.returncode}\n\n'
+            f'Pytest failure output:\n{output}\n\n'
+            'Use this concrete pytest failure as the primary repair signal. '
+            'Keep the next patch minimal and make sure it applies to the exact checked-out source.'
+        ),
+        structured={
+            'source': 'pytest',
+            'tests': f2p.tests,
+            'returncode': f2p.returncode,
+            'iteration': iteration,
+        },
+    )
 
 
 def run_cegf_loop(
@@ -144,6 +175,36 @@ def run_cegf_loop(
         apply_result = None
         if work_copy and work_copy.exists():
             apply_result = apply_patch_to_repository(work_copy, patch.diff)
+            if not apply_result.applied and apply_result.error and api_key:
+                _reset_working_copy(work_copy, repo_path)
+                repaired_patch = repair_patch_application(
+                    task=task,
+                    failed_patch=patch,
+                    apply_error=apply_result.error,
+                    repo_path=work_copy,
+                    api_key=api_key,
+                    model=model,
+                    provider=provider,
+                )
+                metrics.total_prompt_tokens += repaired_patch.prompt_tokens
+                metrics.total_completion_tokens += repaired_patch.completion_tokens
+                if repaired_patch.parse_ok:
+                    repaired_apply_result = apply_patch_to_repository(work_copy, repaired_patch.diff)
+                    repaired_patch = repaired_patch.model_copy(update={
+                        'apply_ok': repaired_apply_result.applied,
+                        'errors': repaired_patch.errors + (
+                            [repaired_apply_result.error] if repaired_apply_result.error else []
+                        ),
+                    })
+                    if repaired_apply_result.applied:
+                        patch = repaired_patch
+                        apply_result = repaired_apply_result
+                    else:
+                        patch = repaired_patch
+                        apply_result = repaired_apply_result
+                else:
+                    patch = repaired_patch
+
             patch = patch.model_copy(update={
                 'apply_ok': apply_result.applied,
                 'errors': patch.errors + ([apply_result.error] if apply_result.error else []),
@@ -226,6 +287,18 @@ def run_cegf_loop(
             if test_eval is not None:
                 metrics.success = test_eval.resolved
                 metrics.termination_reason = 'tests_resolved' if test_eval.resolved else 'tests_failed_after_solver'
+                if (
+                    condition == 'neural_cegf'
+                    and not test_eval.resolved
+                    and iteration < max_iterations - 1
+                ):
+                    critique = _build_test_failure_critique(task, test_eval, iteration)
+                    record.critique = critique
+                    if work_copy and repo_path:
+                        _reset_working_copy(work_copy, repo_path)
+                    record.duration_ms = int((time.time() - t_iter) * 1000)
+                    metrics.iterations.append(record)
+                    continue
             else:
                 metrics.success = True
                 metrics.termination_reason = solver_result.status if solver_result else 'no_slice'

@@ -44,13 +44,17 @@ def _default_prepared_dir(subset: str | None = None) -> Path:
     return base / subset if subset else base
 
 
+def _is_git_checkout(path: Path) -> bool:
+    return path.is_dir() and (path / '.git').exists() and any(path.iterdir())
+
+
 def _repair_prepared_task_paths(task):
     """Make checked-in prepared tasks portable across local checkout paths."""
-    if task.repo_path and Path(task.repo_path).exists():
+    if task.repo_path and _is_git_checkout(Path(task.repo_path)):
         return task
 
     local_repo = _project_root() / 'data' / 'prepared' / 'workspaces' / task.task_id / 'repo'
-    if local_repo.exists():
+    if _is_git_checkout(local_repo):
         return task.model_copy(update={'repo_path': str(local_repo)})
     return task
 

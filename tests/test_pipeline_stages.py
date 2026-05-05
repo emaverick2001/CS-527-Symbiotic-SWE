@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -16,8 +17,9 @@ from symbiotic_swe.contracts import (
 )
 from symbiotic_swe.context_selection.selector import load_context_source, select_context
 from symbiotic_swe.dataset.repo_indexer import apply_patch_to_repository
-from symbiotic_swe.evaluation.test_runner import evaluate_task_tests
+from symbiotic_swe.evaluation.test_runner import _pytest_env, evaluate_task_tests
 from symbiotic_swe.feedback.critique import build_critique
+from symbiotic_swe.orchestration.loop import run_cegf_loop
 from symbiotic_swe.orchestration.runner import run_benchmark
 from symbiotic_swe.patch_generation.generator import _extract_diff
 from symbiotic_swe.patch_generation.prompt_builder import build_patch_prompt
@@ -115,7 +117,7 @@ def test_prompt_builder_includes_symbolic_critique(tmp_path: Path) -> None:
 
     messages = build_patch_prompt(task, 'def first(values): ...', iteration=1, critique=critique)
 
-    assert 'Symbolic Verifier Feedback' in messages[0]['content']
+    assert 'Verifier/Test Feedback' in messages[0]['content']
     assert 'values = []' in messages[0]['content']
     assert 'git-style unified diff' in messages[0]['content']
     assert 'checked-out repository' in messages[0]['content']
@@ -308,6 +310,34 @@ def test_patch_application_tolerates_offset_hunk(tmp_path: Path) -> None:
     assert 'return None' in (repo / 'pkg' / 'logic.py').read_text(encoding='utf-8')
 
 
+def test_patch_application_fallback_handles_clear_stale_replacement(tmp_path: Path) -> None:
+    repo = _fixture_repo(tmp_path)
+    target = repo / 'pkg' / 'logic.py'
+    target.write_text(
+        'def first(values):\n'
+        '    # local context not present in generated patch\n'
+        '    return values[0]\n',
+        encoding='utf-8',
+    )
+    _git(repo, 'add', 'pkg/logic.py')
+    _git(repo, 'commit', '-m', 'add context drift')
+    stale_diff = """diff --git a/pkg/logic.py b/pkg/logic.py
+--- a/pkg/logic.py
++++ b/pkg/logic.py
+@@ -1,2 +1,4 @@
+ def first(values):
+-    return values[0]
++    if len(values) == 0:
++        return None
++    return values[0]
+"""
+
+    result = apply_patch_to_repository(repo, stale_diff)
+
+    assert result.applied is True
+    assert 'return None' in target.read_text(encoding='utf-8')
+
+
 def test_slicing_and_solver_find_then_clear_index_risk(tmp_path: Path) -> None:
     repo = _fixture_repo(tmp_path)
     task = _task(repo)
@@ -417,6 +447,141 @@ def test_evaluate_task_tests_applies_oracle_test_patch(tmp_path: Path) -> None:
     assert 'def test_empty' in (repo / 'tests' / 'test_logic.py').read_text(encoding='utf-8')
 
 
+def test_pytest_env_injects_legacy_sympy_collections_shim(tmp_path: Path) -> None:
+    repo = tmp_path / 'repo'
+    (repo / 'sympy' / 'core').mkdir(parents=True)
+    (repo / 'sympy' / 'core' / 'basic.py').write_text(
+        'from collections import Mapping, defaultdict\n',
+        encoding='utf-8',
+    )
+
+    env = _pytest_env(repo)
+
+    shim_dir = repo / '.symbiotic_swe_pytest_shims'
+    assert str(shim_dir) in env['PYTHONPATH'].split(':')
+    shim_source = (shim_dir / 'sitecustomize.py').read_text(encoding='utf-8')
+    assert 'collections.abc' in shim_source
+    assert '"Callable"' in shim_source
+
+
+def test_cegf_retries_with_pytest_feedback_after_solver_nonblocking_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = _fixture_repo(tmp_path)
+    task = _task(repo)
+
+    failing_diff = """diff --git a/pkg/logic.py b/pkg/logic.py
+--- a/pkg/logic.py
++++ b/pkg/logic.py
+@@ -1,2 +1,3 @@
+ def first(values):
++    values = list(values)
+     return values[0]
+"""
+
+    seen_critiques: list[str] = []
+
+    def fake_generate_patch(*args, **kwargs) -> PatchContract:
+        critique = kwargs.get('critique')
+        seen_critiques.append(critique.short_text if critique else '')
+        diff = PATCH_DIFF if critique else failing_diff
+        return PatchContract(
+            patch_id=f'patch{kwargs["iteration"]}',
+            task_id=task.task_id,
+            iteration=kwargs['iteration'],
+            raw_text=f'```diff\n{diff}```',
+            diff=diff,
+            target_files=['pkg/logic.py'],
+            parse_ok=True,
+            model='test',
+        )
+
+    def fake_run_solver(*args, **kwargs) -> SolverResultContract:
+        return SolverResultContract(
+            solver_result_id='s1',
+            task_id=task.task_id,
+            iteration=0,
+            status='unsat',
+        )
+
+    monkeypatch.setattr('symbiotic_swe.orchestration.loop.generate_patch', fake_generate_patch)
+    monkeypatch.setattr('symbiotic_swe.orchestration.loop.run_solver', fake_run_solver)
+
+    metrics = run_cegf_loop(
+        task=task,
+        repo_index=RepoIndex(repo=task.repo, index_path='', files=[]),
+        condition='neural_cegf',
+        max_iterations=2,
+        model='test',
+        work_root=tmp_path / 'runs',
+    )
+
+    assert metrics.success is True
+    assert metrics.total_iterations == 2
+    assert metrics.iterations[0].critique is not None
+    assert 'real FAIL_TO_PASS tests still failed' in seen_critiques[1]
+
+
+def test_loop_repairs_patch_after_apply_failure(tmp_path: Path, monkeypatch) -> None:
+    repo = _fixture_repo(tmp_path)
+    task = _task(repo)
+    bad_diff = """diff --git a/pkg/logic.py b/pkg/logic.py
+--- a/pkg/logic.py
++++ b/pkg/logic.py
+@@ -20,2 +20,4 @@
+ def missing(values):
++    if len(values) == 0:
++        return None
+     return values[0]
+"""
+
+    def fake_generate_patch(*args, **kwargs) -> PatchContract:
+        return PatchContract(
+            patch_id='bad',
+            task_id=task.task_id,
+            iteration=0,
+            raw_text=f'```diff\n{bad_diff}```',
+            diff=bad_diff,
+            target_files=['pkg/logic.py'],
+            parse_ok=True,
+            model='test',
+        )
+
+    def fake_repair_patch_application(*args, **kwargs) -> PatchContract:
+        return PatchContract(
+            patch_id='repaired',
+            task_id=task.task_id,
+            iteration=0,
+            raw_text=f'```diff\n{PATCH_DIFF}```',
+            diff=PATCH_DIFF,
+            target_files=['pkg/logic.py'],
+            parse_ok=True,
+            model='test:repair',
+        )
+
+    monkeypatch.setattr('symbiotic_swe.orchestration.loop.generate_patch', fake_generate_patch)
+    monkeypatch.setattr(
+        'symbiotic_swe.orchestration.loop.repair_patch_application',
+        fake_repair_patch_application,
+    )
+
+    metrics = run_cegf_loop(
+        task=task,
+        repo_index=RepoIndex(repo=task.repo, index_path='', files=[]),
+        condition='neural_only',
+        max_iterations=1,
+        api_key='test-key',
+        model='test',
+        work_root=tmp_path / 'runs',
+    )
+
+    assert metrics.success is True
+    assert metrics.patch_apply_failures == 0
+    assert metrics.iterations[0].patch is not None
+    assert metrics.iterations[0].patch.patch_id == 'repaired'
+
+
 def test_synthetic_cegf_pipeline_writes_run_artifacts(tmp_path: Path, monkeypatch) -> None:
     repo = _fixture_repo(tmp_path)
     task = _task(repo)
@@ -466,3 +631,7 @@ def test_synthetic_cegf_pipeline_writes_run_artifacts(tmp_path: Path, monkeypatc
         'summary.md',
     ):
         assert (output_dir / required).exists()
+
+    manifest = json.loads((output_dir / 'run_manifest.json').read_text(encoding='utf-8'))
+    assert manifest['task_ids'] == [task.task_id]
+    assert manifest['n_tasks'] == 1

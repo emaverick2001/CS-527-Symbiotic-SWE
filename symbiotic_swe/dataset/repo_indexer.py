@@ -27,6 +27,18 @@ class RepositoryIndexerConfig:
     repo_source_overrides: Dict[str, Path] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class _DiffHunk:
+    old_start: int
+    lines: list[str]
+
+
+@dataclass(frozen=True)
+class _FilePatch:
+    path: str
+    hunks: list[_DiffHunk]
+
+
 def _git(repo: Path, *args: str, check: bool = True) -> str:
     result = subprocess.run(
         ['git', *args],
@@ -37,6 +49,166 @@ def _git(repo: Path, *args: str, check: bool = True) -> str:
     if check and result.returncode != 0:
         raise RuntimeError(f'git {args[0]} failed: {result.stderr.strip()}')
     return result.stdout.strip()
+
+
+def _parse_file_patches(patch_text: str) -> list[_FilePatch]:
+    file_patches: list[_FilePatch] = []
+    current_path: str | None = None
+    current_hunks: list[_DiffHunk] = []
+    current_hunk: _DiffHunk | None = None
+
+    def finish_hunk() -> None:
+        nonlocal current_hunk
+        if current_hunk is not None:
+            current_hunks.append(current_hunk)
+            current_hunk = None
+
+    def finish_file() -> None:
+        nonlocal current_path, current_hunks
+        finish_hunk()
+        if current_path and current_hunks:
+            file_patches.append(_FilePatch(path=current_path, hunks=current_hunks))
+        current_path = None
+        current_hunks = []
+
+    for line in patch_text.splitlines():
+        if line.startswith('diff --git '):
+            finish_file()
+            continue
+        if line.startswith('+++ '):
+            raw_path = line[4:].strip().split('\t', 1)[0]
+            if raw_path == '/dev/null':
+                current_path = None
+            elif raw_path.startswith('b/'):
+                current_path = raw_path[2:]
+            else:
+                current_path = raw_path
+            continue
+        if line.startswith('@@ '):
+            finish_hunk()
+            old_part = line.split(' ', 2)[1]
+            old_start = int(old_part.removeprefix('-').split(',', 1)[0])
+            current_hunk = _DiffHunk(old_start=old_start, lines=[])
+            continue
+        if current_hunk is not None:
+            if line.startswith((' ', '+', '-')):
+                current_hunk.lines.append(line)
+            elif line.startswith('\\'):
+                continue
+
+    finish_file()
+    return file_patches
+
+
+def _find_subsequence(
+    lines: list[str],
+    needle: list[str],
+    *,
+    preferred_index: int,
+    normalized: bool = False,
+) -> int | None:
+    if not needle:
+        return min(max(preferred_index, 0), len(lines))
+
+    def norm(value: str) -> str:
+        return value.strip() if normalized else value
+
+    haystack = [norm(line) for line in lines]
+    target = [norm(line) for line in needle]
+    matches = [
+        idx for idx in range(0, len(lines) - len(needle) + 1)
+        if haystack[idx:idx + len(needle)] == target
+    ]
+    if not matches:
+        return None
+    return min(matches, key=lambda idx: abs(idx - preferred_index))
+
+
+def _find_unique_subsequence(lines: list[str], needle: list[str]) -> int | None:
+    if not needle:
+        return None
+    matches = [
+        idx for idx in range(0, len(lines) - len(needle) + 1)
+        if lines[idx:idx + len(needle)] == needle
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _apply_patch_by_clear_replacements(repo_path: Path, patch_text: str) -> PatchApplicationResult:
+    """Apply hunks whose replacement target is clear despite stale diff metadata."""
+    file_patches = _parse_file_patches(patch_text)
+    if not file_patches:
+        return PatchApplicationResult(applied=False, error='no parseable file patches')
+
+    pending_writes: dict[Path, str] = {}
+    for file_patch in file_patches:
+        target = repo_path / file_patch.path
+        if not target.exists() or not target.is_file():
+            return PatchApplicationResult(
+                applied=False,
+                error=f'fallback target file does not exist: {file_patch.path}',
+            )
+
+        file_lines = target.read_text(encoding='utf-8', errors='replace').splitlines()
+        for hunk in file_patch.hunks:
+            before_lines: list[str] = []
+            after_lines: list[str] = []
+            deleted_lines: list[str] = []
+            added_lines: list[str] = []
+            for hunk_line in hunk.lines:
+                marker = hunk_line[:1]
+                content = hunk_line[1:]
+                if marker == ' ':
+                    before_lines.append(content)
+                    after_lines.append(content)
+                elif marker == '-':
+                    before_lines.append(content)
+                    deleted_lines.append(content)
+                elif marker == '+':
+                    after_lines.append(content)
+                    added_lines.append(content)
+
+            preferred_index = max(hunk.old_start - 1, 0)
+            match_index = _find_subsequence(
+                file_lines,
+                before_lines,
+                preferred_index=preferred_index,
+            )
+            if match_index is None:
+                match_index = _find_subsequence(
+                    file_lines,
+                    before_lines,
+                    preferred_index=preferred_index,
+                    normalized=True,
+                )
+            if match_index is not None:
+                file_lines = (
+                    file_lines[:match_index]
+                    + after_lines
+                    + file_lines[match_index + len(before_lines):]
+                )
+                continue
+
+            deletion_index = _find_unique_subsequence(file_lines, deleted_lines)
+            if deletion_index is not None:
+                file_lines = (
+                    file_lines[:deletion_index]
+                    + added_lines
+                    + file_lines[deletion_index + len(deleted_lines):]
+                )
+                continue
+
+            return PatchApplicationResult(
+                applied=False,
+                error=f'fallback could not locate hunk in {file_patch.path}:{hunk.old_start}',
+                rejected_hunks=1,
+            )
+
+        pending_writes[target] = '\n'.join(file_lines) + '\n'
+
+    for target, source in pending_writes.items():
+        target.write_text(source, encoding='utf-8')
+    return PatchApplicationResult(applied=True)
 
 
 def _extract_symbols(source: str, filepath: str) -> tuple[List[RepoSymbol], List[str]]:
@@ -262,6 +434,13 @@ def apply_patch_to_repository(repo_path: Path, patch_text: str) -> PatchApplicat
             detail = patch_dry_run.stderr.strip() or patch_dry_run.stdout.strip()
             if detail:
                 patch_errors.append(detail)
+
+    for variant in patch_variants:
+        fallback = _apply_patch_by_clear_replacements(repo_path, variant)
+        if fallback.applied:
+            return fallback
+        if fallback.error:
+            patch_errors.append(fallback.error)
 
     errors = [*git_errors, *patch_errors]
     combined_error = '\n\n'.join(dict.fromkeys(error for error in errors if error))

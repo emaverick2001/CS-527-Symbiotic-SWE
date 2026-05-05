@@ -1,4 +1,19 @@
+from dataclasses import dataclass
+
+from symbiotic_swe import cli
 from symbiotic_swe.cli import build_parser
+
+
+@dataclass
+class _TaskStub:
+    task_id: str
+    repo_path: str | None
+
+    def model_copy(self, update: dict):
+        return _TaskStub(
+            task_id=update.get('task_id', self.task_id),
+            repo_path=update.get('repo_path', self.repo_path),
+        )
 
 
 def test_cli_exposes_all_execution_modes() -> None:
@@ -44,3 +59,19 @@ def test_cli_accepts_openai_provider_for_smoke() -> None:
     assert args.preflight_only is True
     assert args.provider == 'openai'
     assert args.model == 'gpt-5.5'
+
+
+def test_prepared_task_path_repair_requires_git_checkout(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(cli, '_project_root', lambda: tmp_path)
+    local_repo = tmp_path / 'data' / 'prepared' / 'workspaces' / 'demo-task' / 'repo'
+    local_repo.mkdir(parents=True)
+    task = _TaskStub(task_id='demo-task', repo_path='/Users/teammate/project/workspace/repo')
+
+    repaired = cli._repair_prepared_task_paths(task)
+
+    assert repaired.repo_path == task.repo_path
+
+    (local_repo / '.git').write_text('gitdir: ../.git/worktrees/demo-task\n', encoding='utf-8')
+    repaired = cli._repair_prepared_task_paths(task)
+
+    assert repaired.repo_path == str(local_repo)

@@ -260,3 +260,115 @@ def generate_patch(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
     )
+
+
+def _file_repair_context(repo_path: Path, target_files: list[str], limit: int = 24_000) -> str:
+    chunks: list[str] = []
+    remaining = limit
+    for rel_path in target_files:
+        path = repo_path / rel_path
+        if not path.exists() or not path.is_file():
+            continue
+        source = path.read_text(encoding='utf-8', errors='replace')
+        numbered = '\n'.join(f'{idx:5d}: {line}' for idx, line in enumerate(source.splitlines(), start=1))
+        chunk = f'# File: {rel_path}\n{numbered}\n'
+        if len(chunk) > remaining:
+            chunk = chunk[:remaining]
+        chunks.append(chunk)
+        remaining -= len(chunk)
+        if remaining <= 0:
+            break
+    return '\n\n'.join(chunks)
+
+
+def repair_patch_application(
+    *,
+    task: CanonicalTask,
+    failed_patch: PatchContract,
+    apply_error: str,
+    repo_path: Path,
+    api_key: Optional[str] = None,
+    model: str = MODEL,
+    provider: str = PROVIDER,
+) -> PatchContract:
+    """Ask the model to rewrite a parsed patch against exact checked-out file content."""
+    patch_id = str(uuid.uuid4())[:8]
+    target_files = failed_patch.target_files or _changed_files(failed_patch.diff)
+    file_context = _file_repair_context(repo_path, target_files)
+    if not file_context:
+        return failed_patch.model_copy(update={
+            'patch_id': patch_id,
+            'errors': failed_patch.errors + ['patch repair skipped: no target file context available'],
+        })
+
+    user_content = f"""\
+## Bug Report
+{task.bug_description}
+
+## Failing Tests
+{chr(10).join(f'- {t}' for t in task.failing_tests)}
+
+## Patch Apply Error
+{apply_error}
+
+## Failed Patch
+```diff
+{failed_patch.diff}
+```
+
+## Exact Checked-Out Target Files
+Line numbers are for reference only. Do not include line-number prefixes in the patch.
+
+```python
+{file_context}
+```
+
+Rewrite the failed patch so it applies cleanly to the exact checked-out files above.
+Return exactly one git-style unified diff in a single ```diff code block.
+"""
+
+    raw_text = ''
+    prompt_tokens = 0
+    completion_tokens = 0
+    last_exc: Optional[Exception] = None
+    messages = [{'role': 'user', 'content': user_content}]
+    for attempt in range(2):
+        try:
+            raw_text, prompt_tokens, completion_tokens = _call_model(
+                provider=provider,
+                messages=messages,
+                api_key=api_key,
+                model=model,
+            )
+            last_exc = None
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt < 1:
+                print(f'  [patch repair retry 1/2] {exc}', file=sys.stderr)
+                _time.sleep(1)
+            else:
+                print(f'  [patch repair error] {exc}', file=sys.stderr)
+
+    if last_exc is not None:
+        return failed_patch.model_copy(update={
+            'patch_id': patch_id,
+            'errors': failed_patch.errors + [f'patch repair failed: {last_exc}'],
+        })
+
+    diff = _extract_diff(raw_text)
+    parse_ok = bool(diff.strip())
+    repaired_files = _changed_files(diff) if parse_ok else []
+    return PatchContract(
+        patch_id=patch_id,
+        task_id=task.task_id,
+        iteration=failed_patch.iteration,
+        raw_text=raw_text,
+        diff=diff,
+        target_files=repaired_files,
+        parse_ok=parse_ok,
+        model=f'{provider}:{model}:repair',
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        errors=[] if parse_ok else ['patch repair produced no parseable diff'],
+    )

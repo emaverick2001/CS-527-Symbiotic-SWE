@@ -68,7 +68,7 @@ Do not include context truncation markers or prompt metadata lines in the diff.
             task_block
             + '\n'
             + context_block
-            + f'\n## Symbolic Verifier Feedback (iteration {iteration})\n'
+            + f'\n## Verifier/Test Feedback (iteration {iteration})\n'
             + critique.short_text
             + '\n\nRefine your patch to address the above failure. '
             + 'Produce exactly one git-style unified diff that fixes both the original bug and the counterexample.'

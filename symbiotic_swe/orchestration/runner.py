@@ -77,6 +77,8 @@ def _write_run_artifacts(
             'experiment_name': experiment_name,
             'provider': provider,
             'model': model,
+            'task_ids': [task.task_id for task in tasks],
+            'n_tasks': len(tasks),
             'conditions': conditions,
             'max_iterations': max_iterations,
             'started_at': started_at,

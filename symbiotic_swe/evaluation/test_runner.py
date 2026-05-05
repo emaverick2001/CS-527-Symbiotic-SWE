@@ -135,6 +135,9 @@ def _normalize_test_targets(repo_path: Path, task: CanonicalTask, targets: List[
 def _pytest_env(repo_path: Path) -> dict[str, str]:
     env = dict(os.environ)
     pythonpath_entries = [str(repo_path)]
+    shim_dir = _legacy_sympy_shim_dir(repo_path)
+    if shim_dir is not None:
+        pythonpath_entries.insert(0, str(shim_dir))
     if (repo_path / 'lib').is_dir():
         pythonpath_entries.insert(0, str(repo_path / 'lib'))
     existing_pythonpath = env.get('PYTHONPATH')
@@ -147,6 +150,43 @@ def _pytest_env(repo_path: Path) -> dict[str, str]:
         mpl_config.mkdir(exist_ok=True)
         env['MPLCONFIGDIR'] = str(mpl_config)
     return env
+
+
+def _legacy_sympy_shim_dir(repo_path: Path) -> Path | None:
+    basic_py = repo_path / 'sympy' / 'core' / 'basic.py'
+    if not basic_py.exists():
+        return None
+    source = basic_py.read_text(encoding='utf-8', errors='replace')
+    if 'from collections import Mapping' not in source and 'collections.Mapping' not in source:
+        return None
+
+    shim_dir = repo_path / '.symbiotic_swe_pytest_shims'
+    shim_dir.mkdir(exist_ok=True)
+    (shim_dir / 'sitecustomize.py').write_text(
+        '\n'.join(
+            [
+                'import collections',
+                'import collections.abc',
+                '',
+                'for _name in (',
+                '    "Mapping",',
+                '    "MutableMapping",',
+                '    "Sequence",',
+                '    "MutableSequence",',
+                '    "Set",',
+                '    "MutableSet",',
+                '    "Iterable",',
+                '    "Iterator",',
+                '    "Callable",',
+                '):',
+                '    if not hasattr(collections, _name) and hasattr(collections.abc, _name):',
+                '        setattr(collections, _name, getattr(collections.abc, _name))',
+                '',
+            ]
+        ),
+        encoding='utf-8',
+    )
+    return shim_dir
 
 
 def _repo_slug(task: CanonicalTask) -> str:
@@ -170,7 +210,11 @@ def _run_repo_prep_command(
     repo_path: Path,
     command: list[str],
     timeout_sec: int,
+    extra_env: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
+    env = _pytest_env(repo_path)
+    if extra_env:
+        env.update(extra_env)
     try:
         result = subprocess.run(
             command,
@@ -178,7 +222,7 @@ def _run_repo_prep_command(
             capture_output=True,
             text=True,
             timeout=timeout_sec,
-            env=_pytest_env(repo_path),
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         output = '\n'.join(part for part in (exc.stdout or '', exc.stderr or '') if part)
@@ -205,8 +249,14 @@ def _prepare_scikit_learn_repo(repo_path: Path) -> str | None:
     commands.append([sys.executable, 'setup.py', 'build_ext', '--inplace'])
 
     errors: list[str] = []
+    build_env = {'SKLEARN_NO_OPENMP': '1'}
     for command in commands:
-        ok, detail = _run_repo_prep_command(repo_path, command, timeout_sec=600)
+        ok, detail = _run_repo_prep_command(
+            repo_path,
+            command,
+            timeout_sec=600,
+            extra_env=build_env,
+        )
         if ok and _sklearn_check_build_extension_exists(repo_path):
             return None
         if detail:
