@@ -8,8 +8,14 @@ MAX_ITERATIONS="${MAX_ITERATIONS:-1}"
 CONDITIONS="${CONDITIONS:-neural_only,neural_slicing,neural_solver,neural_cegf}"
 RUN_ID="${RUN_ID:-$(date +%Y%m%d_%H%M%S)_${PROVIDER}_${MODEL//_/-}_smoke_z3_s0}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts/runs/${RUN_ID}}"
+UV_RUN_EXTRA="${UV_RUN_EXTRA:-swebench}"
 
-uv run symbiotic-swe smoke \
+uv_run=(uv run)
+if [[ -n "${UV_RUN_EXTRA}" ]]; then
+  uv_run+=(--extra "${UV_RUN_EXTRA}")
+fi
+
+"${uv_run[@]}" symbiotic-swe smoke \
   --preflight-only \
   --prepared-dir "${PREPARED_DIR}" \
   --output-dir "${OUTPUT_DIR}" \
@@ -18,7 +24,7 @@ uv run symbiotic-swe smoke \
   --provider "${PROVIDER}" \
   --model "${MODEL}"
 
-uv run symbiotic-swe smoke \
+"${uv_run[@]}" symbiotic-swe smoke \
   --prepared-dir "${PREPARED_DIR}" \
   --output-dir "${OUTPUT_DIR}" \
   --conditions "${CONDITIONS}" \

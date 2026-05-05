@@ -119,6 +119,7 @@ def test_prompt_builder_includes_symbolic_critique(tmp_path: Path) -> None:
     assert 'values = []' in messages[0]['content']
     assert 'git-style unified diff' in messages[0]['content']
     assert 'checked-out repository' in messages[0]['content']
+    assert 'context truncation markers' in messages[0]['content']
 
 
 def test_patch_parser_extracts_last_diff_block() -> None:
@@ -145,6 +146,26 @@ def test_patch_parser_adds_missing_git_headers() -> None:
 
     assert parsed.startswith('diff --git a/pkg/logic.py b/pkg/logic.py')
     assert '--- a/pkg/logic.py\n+++ b/pkg/logic.py' in parsed
+
+
+def test_patch_parser_drops_prompt_artifact_lines() -> None:
+    raw = """```diff
+diff --git a/pkg/logic.py b/pkg/logic.py
+--- a/pkg/logic.py
++++ b/pkg/logic.py
+@@ -1,4 +1,4 @@
+ # Exact checked-out source lines 1-4; surrounding file content omitted from the prompt.
+ def first(values):
+-    return values[0]
++    return None if not values else values[0]
+ # ... (truncated after)
+```"""
+
+    parsed = _extract_diff(raw)
+
+    assert '# Exact checked-out source lines' not in parsed
+    assert '# ... (truncated after)' not in parsed
+    assert '@@ -1,2 +1,2 @@' in parsed
 
 
 def test_context_source_includes_exact_traceback_window(tmp_path: Path) -> None:
@@ -219,6 +240,54 @@ def test_sympy_numeric_boolean_report_prioritizes_numbers_context(tmp_path: Path
     assert '# High-priority source context: SymPy Float.__eq__ numeric-vs-Boolean equality logic.' in source
     assert 'if isinstance(other, Boolean):' in source
     assert 'sympy/logic/boolalg.py' in source
+
+
+def test_sympy_complex_exponent_report_prioritizes_fu_context(tmp_path: Path) -> None:
+    repo = tmp_path / 'repo'
+    (repo / 'sympy' / 'simplify').mkdir(parents=True)
+    (repo / 'sympy' / 'core').mkdir(parents=True)
+    fu_source = '\n'.join(
+        [
+            'def _TR56(rv, f, g, h, max, pow):',
+            '    def _f(rv):',
+            '        if not (rv.is_Pow and rv.base.func == f):',
+            '            return rv',
+            '        if (rv.exp < 0) == True:',
+            '            return rv',
+            '        if (rv.exp > max) == True:',
+            '            return rv',
+            '        return rv',
+            '    return rv',
+            '',
+        ]
+    )
+    expr_source = 'class Expr:\n    def __lt__(self, other):\n        raise TypeError("Invalid comparison of complex I")\n'
+    (repo / 'sympy' / 'simplify' / 'fu.py').write_text(fu_source, encoding='utf-8')
+    (repo / 'sympy' / 'core' / 'expr.py').write_text(expr_source, encoding='utf-8')
+    task = CanonicalTask(
+        task_id='sympy__sympy-17139',
+        repo='sympy/sympy',
+        repo_commit='abc123',
+        repo_path=str(repo),
+        bug_description='simplify(cos(x)**I): Invalid comparison of complex I (fu.py) at rv.exp < 0.',
+        failing_tests=['test__TR56', 'test_issue_17137'],
+        metadata=TaskMetadata(dataset='synthetic', logic_heavy=True, repo_name='sympy'),
+    )
+    repo_index = RepoIndex(
+        repo='sympy/sympy',
+        index_path='memory',
+        files=[
+            RepoFileEntry(path='sympy/core/expr.py', role='source'),
+            RepoFileEntry(path='sympy/simplify/fu.py', role='source'),
+        ],
+    )
+
+    context = select_context(task, repo_index)
+    source = load_context_source(task, context, repo)
+
+    assert context.files[0].path == 'sympy/simplify/fu.py'
+    assert '# High-priority source context: SymPy _TR56 complex exponent guard before exponent comparisons.' in source
+    assert 'if (rv.exp < 0) == True:' in source
 
 
 def test_patch_application_tolerates_offset_hunk(tmp_path: Path) -> None:
@@ -381,6 +450,8 @@ def test_synthetic_cegf_pipeline_writes_run_artifacts(tmp_path: Path, monkeypatc
     assert metrics.success is True
     assert metrics.test_resolved is True
     assert metrics.termination_reason == 'tests_resolved'
+    assert metrics.iterations[0].patch is not None
+    assert metrics.iterations[0].patch.syntax_ok is True
 
     for required in (
         'config.yaml',

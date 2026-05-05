@@ -52,6 +52,23 @@ def _fix_hunk_counts(diff: str) -> str:
     return '\n'.join(result) + '\n'
 
 
+def _drop_prompt_artifact_lines(diff: str) -> str:
+    """Remove prompt-only context markers if a model copied them into a hunk."""
+    artifact_markers = (
+        '# ... (truncated before)',
+        '# ... (truncated after)',
+        '# ... (truncated)',
+        '# Exact checked-out source lines',
+    )
+    cleaned: List[str] = []
+    for line in diff.splitlines():
+        payload = line[1:] if line[:1] in {' ', '+', '-'} else line
+        if any(marker in payload for marker in artifact_markers):
+            continue
+        cleaned.append(line)
+    return '\n'.join(cleaned) + '\n'
+
+
 def _ensure_git_headers(diff: str) -> str:
     lines = diff.splitlines()
     if not lines or lines[0].startswith('diff --git '):
@@ -78,13 +95,13 @@ def _extract_diff(raw_text: str) -> str:
     candidates = re.findall(r'```diff\s*\n(.*?)```', raw_text, re.DOTALL)
     candidates = [c.strip() for c in candidates if c.strip()]
     if candidates:
-        return _ensure_git_headers(_fix_hunk_counts(candidates[-1]))
+        return _ensure_git_headers(_fix_hunk_counts(_drop_prompt_artifact_lines(candidates[-1])))
     # Fallback: unnamed code block that looks like a diff
     blocks = re.findall(r'```\s*\n(.*?)```', raw_text, re.DOTALL)
     for block in reversed(blocks):
         block = block.strip()
         if block.startswith(('diff --git', '--- ', '@@ ', '+')):
-            return _ensure_git_headers(_fix_hunk_counts(block))
+            return _ensure_git_headers(_fix_hunk_counts(_drop_prompt_artifact_lines(block)))
     return ''
 
 

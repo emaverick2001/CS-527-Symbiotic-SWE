@@ -18,6 +18,8 @@ Rules:
 - Include the correct file headers immediately after each `diff --git`: `--- a/path` and `+++ b/path`.
 - Use only repository-relative paths that appear in the supplied source context.
 - Base every hunk on the exact checked-out source shown in the prompt; do not invent or paraphrase context lines.
+- Treat `# File:` and other context labels as prompt metadata, not repository source.
+- Do not include context truncation markers such as `# ... (truncated before)`, `# ... (truncated after)`, or `# ... (truncated)` in the diff.
 - Do not include source line-number prefixes in the patch.
 - Hunk line counts in @@ -X,Y +X,Y @@ must exactly match the lines in the hunk.
 - The diff must apply cleanly with `git apply`.
@@ -46,6 +48,8 @@ def build_patch_prompt(
 ## Relevant Repository Code
 The following snippets are copied from the checked-out repository at the task commit.
 Use these exact lines as patch context.
+Lines beginning with `# File:` are labels only. They are not source lines and must not appear in the diff.
+Do not include context truncation markers or prompt metadata lines in the diff.
 
 ```python
 {context_source[:40_000]}

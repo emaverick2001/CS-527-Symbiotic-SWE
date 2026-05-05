@@ -10,6 +10,7 @@ Conditions:
 
 from __future__ import annotations
 
+import ast
 import shutil
 import time
 import uuid
@@ -62,6 +63,21 @@ def _record_test_evaluation(
     metrics.test_resolved = evaluation.resolved
     metrics.final_test_evaluation = evaluation
     return evaluation
+
+
+def _check_patch_syntax(repo_path: Path, target_files: list[str]) -> tuple[bool, list[str]]:
+    errors: list[str] = []
+    checked = False
+    for rel_path in target_files:
+        if not rel_path.endswith('.py'):
+            continue
+        checked = True
+        path = repo_path / rel_path
+        try:
+            ast.parse(path.read_text(encoding='utf-8', errors='replace'))
+        except Exception as exc:
+            errors.append(f'{rel_path}: syntax check failed: {exc}')
+    return (not errors if checked else True), errors
 
 
 def run_cegf_loop(
@@ -140,6 +156,13 @@ def run_cegf_loop(
                 record.duration_ms = int((time.time() - t_iter) * 1000)
                 metrics.iterations.append(record)
                 continue
+
+            syntax_ok, syntax_errors = _check_patch_syntax(work_copy, patch.target_files)
+            patch = patch.model_copy(update={
+                'syntax_ok': syntax_ok,
+                'errors': patch.errors + syntax_errors,
+            })
+            record.patch = patch
 
         # ── 3. Neural-only: stop after first successful patch apply ─────────
         if condition == 'neural_only':

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import os
+import shutil
 import re
 import subprocess
 import sys
@@ -148,6 +149,87 @@ def _pytest_env(repo_path: Path) -> dict[str, str]:
     return env
 
 
+def _repo_slug(task: CanonicalTask) -> str:
+    return task.repo.lower().replace('_', '-')
+
+
+def _is_scikit_learn_task(task: CanonicalTask, repo_path: Path) -> bool:
+    return _repo_slug(task) == 'scikit-learn/scikit-learn' or (repo_path / 'sklearn').is_dir()
+
+
+def _is_matplotlib_task(task: CanonicalTask, repo_path: Path) -> bool:
+    return _repo_slug(task) == 'matplotlib/matplotlib' or (repo_path / 'lib' / 'matplotlib').is_dir()
+
+
+def _sklearn_check_build_extension_exists(repo_path: Path) -> bool:
+    check_build_dir = repo_path / 'sklearn' / '__check_build'
+    return any(check_build_dir.glob('_check_build*.so')) or any(check_build_dir.glob('_check_build*.pyd'))
+
+
+def _run_repo_prep_command(
+    repo_path: Path,
+    command: list[str],
+    timeout_sec: int,
+) -> tuple[bool, str]:
+    try:
+        result = subprocess.run(
+            command,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+            env=_pytest_env(repo_path),
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = '\n'.join(part for part in (exc.stdout or '', exc.stderr or '') if part)
+        return False, f'command timed out after {timeout_sec}s: {" ".join(command)}\n{_tail(output)}'
+
+    if result.returncode == 0:
+        return True, ''
+    output = '\n'.join(part for part in (result.stdout, result.stderr) if part)
+    return False, f'command failed ({result.returncode}): {" ".join(command)}\n{_tail(output)}'
+
+
+def _prepare_scikit_learn_repo(repo_path: Path) -> str | None:
+    if _sklearn_check_build_extension_exists(repo_path):
+        return None
+
+    setup_py = repo_path / 'setup.py'
+    if not setup_py.exists():
+        return 'scikit-learn source checkout has no setup.py; cannot build extension modules'
+
+    build_tool = shutil.which('make')
+    commands = []
+    if build_tool:
+        commands.append(['make', 'in'])
+    commands.append([sys.executable, 'setup.py', 'build_ext', '--inplace'])
+
+    errors: list[str] = []
+    for command in commands:
+        ok, detail = _run_repo_prep_command(repo_path, command, timeout_sec=600)
+        if ok and _sklearn_check_build_extension_exists(repo_path):
+            return None
+        if detail:
+            errors.append(detail)
+
+    return 'scikit-learn build failed before pytest:\n' + '\n\n'.join(errors)
+
+
+def _prepare_repo_for_pytest(repo_path: Path, task: CanonicalTask) -> str | None:
+    if _is_scikit_learn_task(task, repo_path):
+        return _prepare_scikit_learn_repo(repo_path)
+    return None
+
+
+def _environment_limited_error(repo_path: Path, task: CanonicalTask, result: TestSuiteResult) -> str | None:
+    output = f'{result.stderr}\n{result.stdout}'
+    if _is_scikit_learn_task(task, repo_path) and 'sklearn.__check_build._check_build' in output:
+        return 'environment_limited: scikit-learn extension modules are not built'
+    if _is_matplotlib_task(task, repo_path) and 'Matplotlib is not built with the correct FreeType version' in output:
+        return 'environment_limited: Matplotlib FreeType version mismatch in local test environment'
+    return None
+
+
 def _run_pytest_suite(repo_path: Path, name: str, tests: List[str], timeout_sec: int) -> TestSuiteResult:
     if not tests:
         return TestSuiteResult(name=name, tests=[], passed=True)
@@ -221,17 +303,49 @@ def evaluate_task_tests(
             error=fail_result.error,
         )
 
+    prep_error = _prepare_repo_for_pytest(repo_path, task)
+    if prep_error is not None:
+        fail_result = TestSuiteResult(
+            name='FAIL_TO_PASS',
+            tests=fail_to_pass,
+            command=['<repo test environment prep>'],
+            returncode=1,
+            passed=False,
+            duration_ms=int((time.time() - started) * 1000),
+            error=f'environment_limited: {prep_error}',
+        )
+        pass_result = TestSuiteResult(name='PASS_TO_PASS', tests=pass_to_pass, passed=False)
+        return TestEvaluationResult(
+            task_id=task.task_id,
+            iteration=iteration,
+            resolved=False,
+            evaluated=False,
+            fail_to_pass=fail_result,
+            pass_to_pass=pass_result,
+            duration_ms=int((time.time() - started) * 1000),
+            error=fail_result.error,
+        )
+
     fail_to_pass = _normalize_test_targets(repo_path, task, fail_to_pass)
     pass_to_pass = _normalize_test_targets(repo_path, task, pass_to_pass)
 
     f2p_result = _run_pytest_suite(repo_path, 'FAIL_TO_PASS', fail_to_pass, timeout_sec)
     p2p_result = _run_pytest_suite(repo_path, 'PASS_TO_PASS', pass_to_pass, timeout_sec)
 
+    f2p_env_error = _environment_limited_error(repo_path, task, f2p_result)
+    p2p_env_error = _environment_limited_error(repo_path, task, p2p_result)
+    if f2p_env_error:
+        f2p_result = f2p_result.model_copy(update={'error': f2p_env_error})
+    if p2p_env_error:
+        p2p_result = p2p_result.model_copy(update={'error': p2p_env_error})
+
     evaluated = bool(fail_to_pass)
     resolved = bool(evaluated and f2p_result.passed and p2p_result.passed)
     error: str | None = None
     if not fail_to_pass:
         error = 'no FAIL_TO_PASS tests available'
+    elif f2p_env_error or p2p_env_error:
+        error = f2p_env_error or p2p_env_error
 
     return TestEvaluationResult(
         task_id=task.task_id,

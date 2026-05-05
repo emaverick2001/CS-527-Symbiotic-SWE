@@ -197,57 +197,74 @@ def apply_patch_to_repository(repo_path: Path, patch_text: str) -> PatchApplicat
     if not patch_text.strip():
         return PatchApplicationResult(applied=False, error='empty patch')
 
+    def _without_index_lines(text: str) -> str:
+        return '\n'.join(
+            line for line in text.splitlines()
+            if not line.startswith('index ')
+        ) + '\n'
+
+    patch_variants = [patch_text]
+    stripped_index_patch = _without_index_lines(patch_text)
+    if stripped_index_patch != patch_text:
+        patch_variants.append(stripped_index_patch)
+
     # Try atomic git apply modes first. Avoid --reject here because it can leave
     # partial changes and .rej files before more tolerant fallbacks run.
-    result = subprocess.run(
+    git_errors: list[str] = []
+    git_modes = [
         ['git', 'apply', '--recount', '-'],
-        input=patch_text,
-        cwd=repo_path,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        return PatchApplicationResult(applied=True)
-
-    first_error = result.stderr.strip() or result.stdout.strip()
-
-    result_3way = subprocess.run(
+        ['git', 'apply', '--ignore-space-change', '--ignore-whitespace', '--recount', '-'],
         ['git', 'apply', '--3way', '--recount', '-'],
-        input=patch_text,
-        cwd=repo_path,
-        capture_output=True,
-        text=True,
-    )
-    if result_3way.returncode == 0:
-        return PatchApplicationResult(applied=True)
+        ['git', 'apply', '--3way', '--ignore-space-change', '--ignore-whitespace', '--recount', '-'],
+    ]
+    for variant in patch_variants:
+        for command in git_modes:
+            result = subprocess.run(
+                command,
+                input=variant,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                return PatchApplicationResult(applied=True)
+            detail = result.stderr.strip() or result.stdout.strip()
+            if detail:
+                git_errors.append(detail)
+
+    first_error = git_errors[0] if git_errors else ''
 
     # Fallback: patch with fuzz=3 to tolerate slightly wrong line numbers or
     # small context drift. Dry-run first so failed attempts do not dirty the repo.
-    patch_dry_run = subprocess.run(
-        ['patch', '--dry-run', '-p1', '-F3', '-t', '--no-backup-if-mismatch'],
-        input=patch_text,
-        cwd=repo_path,
-        capture_output=True,
-        text=True,
-    )
-    if patch_dry_run.returncode == 0:
-        patch_apply = subprocess.run(
-            ['patch', '-p1', '-F3', '-t', '--no-backup-if-mismatch'],
-            input=patch_text,
+    patch_errors: list[str] = []
+    for variant in patch_variants:
+        patch_dry_run = subprocess.run(
+            ['patch', '--dry-run', '-p1', '-F3', '-t', '--no-backup-if-mismatch'],
+            input=variant,
             cwd=repo_path,
             capture_output=True,
             text=True,
         )
-        if patch_apply.returncode == 0:
-            return PatchApplicationResult(applied=True)
-        first_error = patch_apply.stderr.strip() or patch_apply.stdout.strip() or first_error
+        if patch_dry_run.returncode == 0:
+            patch_apply = subprocess.run(
+                ['patch', '-p1', '-F3', '-t', '--no-backup-if-mismatch'],
+                input=variant,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+            if patch_apply.returncode == 0:
+                return PatchApplicationResult(applied=True)
+            detail = patch_apply.stderr.strip() or patch_apply.stdout.strip()
+            if detail:
+                patch_errors.append(detail)
+        else:
+            detail = patch_dry_run.stderr.strip() or patch_dry_run.stdout.strip()
+            if detail:
+                patch_errors.append(detail)
 
-    errors = [
-        first_error,
-        result_3way.stderr.strip() or result_3way.stdout.strip(),
-        patch_dry_run.stderr.strip() or patch_dry_run.stdout.strip(),
-    ]
-    combined_error = '\n\n'.join(error for error in errors if error)
+    errors = [*git_errors, *patch_errors]
+    combined_error = '\n\n'.join(dict.fromkeys(error for error in errors if error))
     rejected = combined_error.count('.rej') + combined_error.count('Rejected hunk')
     return PatchApplicationResult(
         applied=False,

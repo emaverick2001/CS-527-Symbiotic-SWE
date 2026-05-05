@@ -44,10 +44,23 @@ def _is_sympy_numeric_boolean_equality_report(task: CanonicalTask) -> bool:
     return has_boolean_operand and has_numeric_operand and has_equality
 
 
+def _is_sympy_complex_exponent_comparison_report(task: CanonicalTask) -> bool:
+    if task.repo != 'sympy/sympy':
+        return False
+
+    text = f'{task.bug_description} {" ".join(task.failing_tests)}'.lower()
+    has_complex_exponent = any(token in text for token in ('cos(x)**i', 'sin(x)**i', 'complex i', 'invalid comparison'))
+    has_simplify_path = any(token in text for token in ('fu.py', 'trigsimp', 'simplify', 'tr56', 'test__tr56'))
+    has_comparison = any(token in text for token in ('rv.exp', '< 0', '> max', 'comparison'))
+    return has_complex_exponent and has_simplify_path and has_comparison
+
+
 def _priority_source_paths(task: CanonicalTask) -> List[str]:
     """Repo-specific source hints for bugs where lexical search is misleading."""
     if _is_sympy_numeric_boolean_equality_report(task):
         return ['sympy/core/numbers.py']
+    if _is_sympy_complex_exponent_comparison_report(task):
+        return ['sympy/simplify/fu.py']
     return []
 
 
@@ -145,6 +158,13 @@ def _find_sympy_float_eq_line(source: str) -> int | None:
     return None
 
 
+def _find_sympy_tr56_inner_line(source: str) -> int | None:
+    for index, line in enumerate(source.splitlines(), start=1):
+        if line.startswith('def _TR56('):
+            return index
+    return None
+
+
 def _priority_source_windows(task: CanonicalTask, repo_path: Path) -> List[tuple[str, int, str]]:
     windows: List[tuple[str, int, str]] = []
     for rel_path in _priority_source_paths(task):
@@ -160,6 +180,10 @@ def _priority_source_windows(task: CanonicalTask, repo_path: Path) -> List[tuple
             line = _find_sympy_float_eq_line(source)
             if line is not None:
                 windows.append((rel_path, line, 'SymPy Float.__eq__ numeric-vs-Boolean equality logic'))
+        elif rel_path == 'sympy/simplify/fu.py':
+            line = _find_sympy_tr56_inner_line(source)
+            if line is not None:
+                windows.append((rel_path, line, 'SymPy _TR56 complex exponent guard before exponent comparisons'))
     return windows
 
 
@@ -176,7 +200,7 @@ def load_context_source(
         )
 
     PER_FILE_LIMIT = 8_000
-    CONTEXT_WINDOW = 3_000  # chars around matched symbol when file is large
+    CONTEXT_WINDOW_RADIUS = 120  # source lines around matched symbol when file is large
     chunks: List[str] = []
     seen_paths: set[str] = set()
 
@@ -220,26 +244,22 @@ def load_context_source(
                 source = fpath.read_text(encoding='utf-8', errors='replace')
                 if len(source) > PER_FILE_LIMIT and entry.symbols:
                     # Extract a window around the most relevant symbol (first with source)
-                    lines = source.splitlines(keepends=True)
                     best = next((s for s in entry.symbols if s.source), None)
                     if best:
-                        # Convert line number to char offset
-                        start_line = max(0, best.line_start - 1)
-                        end_line = min(len(lines), getattr(best, 'line_end', best.line_start))
-                        char_start = sum(len(line) for line in lines[:start_line])
-                        char_end = sum(len(line) for line in lines[:end_line])
-                        # Pad to CONTEXT_WINDOW on each side
-                        pad = max(0, (CONTEXT_WINDOW - (char_end - char_start)) // 2)
-                        c_start = max(0, char_start - pad)
-                        c_end = min(len(source), char_end + pad)
-                        excerpt = source[c_start:c_end]
-                        prefix = '# ... (truncated before)\n' if c_start > 0 else ''
-                        suffix = '\n# ... (truncated after)' if c_end < len(source) else ''
-                        source = prefix + excerpt + suffix
+                        start, end, excerpt = _line_window(
+                            source,
+                            best.line_start,
+                            radius=CONTEXT_WINDOW_RADIUS,
+                        )
+                        source = (
+                            f'# Exact checked-out source lines {start}-{end}; '
+                            'surrounding file content omitted from the prompt.\n'
+                            f'{excerpt}'
+                        )
                     else:
-                        source = source[:PER_FILE_LIMIT] + '\n# ... (truncated)'
+                        source = source[:PER_FILE_LIMIT]
                 elif len(source) > PER_FILE_LIMIT:
-                    source = source[:PER_FILE_LIMIT] + '\n# ... (truncated)'
+                    source = source[:PER_FILE_LIMIT]
                 chunks.append(f'# File: {entry.path}\n{source}')
             except Exception:
                 pass

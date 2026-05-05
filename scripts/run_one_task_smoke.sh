@@ -19,6 +19,12 @@ fi
 
 RUN_ID="${RUN_ID:-$(date +%Y%m%d_%H%M%S)_${PROVIDER}_${MODEL//_/-}_one-task-smoke_z3_s0}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts/runs/${RUN_ID}}"
+UV_RUN_EXTRA="${UV_RUN_EXTRA:-swebench}"
+
+uv_run=(uv run)
+if [[ -n "${UV_RUN_EXTRA}" ]]; then
+  uv_run+=(--extra "${UV_RUN_EXTRA}")
+fi
 
 echo "One-task smoke"
 echo "  task_id:        ${TASK_ID}"
@@ -28,7 +34,7 @@ echo "  provider/model: ${PROVIDER}:${MODEL}"
 echo "  conditions:     ${CONDITIONS}"
 echo "  max_iterations: ${MAX_ITERATIONS}"
 
-uv run symbiotic-swe smoke \
+"${uv_run[@]}" symbiotic-swe smoke \
   --preflight-only \
   --task-id "${TASK_ID}" \
   --prepared-dir "${PREPARED_DIR}" \
@@ -44,7 +50,7 @@ if [[ "${PREFLIGHT_ONLY}" == "1" || "${PREFLIGHT_ONLY}" == "true" ]]; then
   exit 0
 fi
 
-uv run symbiotic-swe smoke \
+"${uv_run[@]}" symbiotic-swe smoke \
   --task-id "${TASK_ID}" \
   --prepared-dir "${PREPARED_DIR}" \
   --output-dir "${OUTPUT_DIR}" \
