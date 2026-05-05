@@ -19,7 +19,7 @@
 - Given context $c$ and critique history $h_{k-1}$, the LLM produces a candidate patch $p_k = G_\theta(c, h_{k-1})$. The patch is applied to an isolated repository workspace. If it fails to apply or produces a parser-level failure, the system generates an immediate mechanical critique and continues. Otherwise, the system extracts a patch-centered slice $s_k = \mathcal{S}(r, p_k)$ typically defined as the enclosing function plus a bounded neighborhood of nearby guards and helper expressions directly touching the edited lines. The practical objective is not perfect dependency recovery but consistent extraction of the smallest function-level artifact that is meaningful to both the LLM and the symbolic backend.
 - The symbolic stage then constructs a verification harness over $s_k$. This step is the bridge between repository repair and function-level symbolic execution. CrossHair only analyzes code that is reachable from a function with at least one explicit precondition or postcondition, and its most lightweight mode is assert-based contracts. Accordingly, the harness adds or reuses four kinds of information: function arguments and types from existing Python annotations; preconditions from leading asserts or obvious domain guards; postconditions from fail-to-pass tests, explicit asserts, or issue-derived expectations; and mutation constraints where the observed behavior suggests purity or limited side effects. In practice, this means the verifier does **not** attempt to infer a complete formal specification for the entire repository. Instead, it packages just enough local structure to ask whether the patch still admits an invalid behavior witness. 
 - The verifier checks the satisfiability of a violation formula: $\exists z \; \text{s.t.} \; \Phi(s_k, z) \land \neg \Psi(s_k, z)$ where $z$ denotes symbolic inputs, $\Phi$ encodes well-typed feasible paths through the patched slice under the selected preconditions, and $\Psi$ encodes the desired local property. Because Z3 is an SMT engine rather than a semantic program synthesizer, the interpretation of outcomes is important. If the violation condition is **SAT**, the model produced by the solver is a concrete counterexample, which the system treats as evidence that the patch is still logically flawed. If the violation condition is UNSAT, then no violating input was found within the chosen slice, contract encoding, and timeout budget. If the verifier returns UNKNOWN or times out, the system does not claim correctness; it falls back to execution feedback and records the verifier outcome for analysis. This bounded interpretation is crucial to the soundness of the approach. 
-### ==**2. System Design (WHAT is built)**==
+### **2. System Design (WHAT is built)**
 - Describe the **architecture of your system**
 - **Output of this section should be:**
 	- A **clear system architecture + pipeline**
@@ -560,15 +560,6 @@
 			- max iterations
 			- convergence criteria
 ##### 11. **Termination / Evaluation**
-- Current status:
-	- implemented at the harness level
-	- still needs real smoke runs, dev ablation runs, and final evaluation runs
-	- next work is experimental validation, not more scaffold work
-	- Goal:
-	- decide whether a generated patch actually resolves the SWE-bench task
-	- use real tests as the final authority when available
-	- record termination reasons so failed runs can be debugged systematically
-	- aggregate results across experiment conditions
 ###### Key Components / Deliverables
 1. Evaluation Engine
 	- Files:
@@ -664,28 +655,7 @@
 		- human-readable failures to triage
 	- `summary.md`
 		- short run summary for lab notes
-10. Metrics To Report
-	- per condition:
-		- `n_tasks`
-		- `bug_resolution_rate`
-		- `test_evaluated_tasks`
-		- `test_resolution_rate`
-		- `avg_iterations`
-		- `avg_tokens`
-		- `tokens_per_success`
-		- `avg_duration_ms`
-		- `solver_overhead_fraction`
-		- `avg_patch_apply_failures`
-		- `repeated_counterexample_rate`
-		- `solver_outcomes`
-		- `termination_reasons`
-	- comparisons:
-		- `neural_only` vs `neural_cegf`
-		- `neural_slicing` vs `neural_solver`
-		- solver overhead vs test-resolution improvement
-		- counterexample feedback usefulness
-###### Current Phase: Real-Run Validation
-1. Phase 11A: Run smoke experiments
+10. Phase 11A: Run smoke experiments
 	- Purpose:
 		- verify the harness works on real prepared tasks
 		- verify the LLM API path works
@@ -716,7 +686,7 @@
 		- run artifacts pass structure validation
 	- On your teammate’s run: they likely “got outcomes” because that older experiments/results path was not doing real pytest-based evaluation. It has proxy success fields, but not the newer test_evaluated, test_resolved, or final_test_evaluation records. Your current pipeline is stricter, so it exposes environment failures and bad patch application that the earlier run could miss.
 	- For Matplotlib: I would not spend today trying to fully fix it unless you absolutely need Matplotlib in final eval. The current blocker is a real local environment mismatch: FreeType expected by the historical Matplotlib task differs from your installed/system FreeType. The harness now classifies that as environment-limited. For the paper deadline, I’d run SymPy-focused real-test dev ablations and report Matplotlib/scikit-learn as environment-limited or patch-apply-limited cases.
-2. Phase 11B: Debug real test execution failures
+11. Phase 11B: Debug real test execution failures
 	- Common failure classes:
 		1. patch generation failure
 			- symptoms:
@@ -778,7 +748,7 @@
 				3. reduce patch apply failures
 				4. inspect solver/test disagreements
 				5. only then tune model prompts or symbolic heuristics
-3. Phase 11C: Run dev ablations
+12. Phase 11C: Run dev ablations
 	- Purpose:
 		- compare all four experiment conditions before final evaluation
 		- use dev results to debug and calibrate the pipeline
@@ -804,7 +774,7 @@
 			- test resolution rates are computed
 			- termination reasons are interpretable
 			- at least a few representative success and failure examples can be explained
-4. Phase 11D: Run final evaluation
+13. Phase 11D: Run final evaluation
 	- Purpose:
 		- produce the final held-out results for the project/report
 	- Command:
@@ -828,22 +798,7 @@
 		- dependency/test environment failures
 		- patch apply failures
 		- cases where feedback helped or hurt
-5. Completion Criteria For Section 11
-	- MVP complete:
-	- evaluation harness exists
-	- tests can be run on patched working copies
-	- metrics and artifacts are written
-	- Current next milestone:
-	- smoke run completes on real prepared tasks
-	- real failures are categorized and debugged
-	- Dev-ready:
-	- all four ablation conditions run on dev tasks
-	- results are comparable across conditions
-	- Project complete:
-	- final evaluation run completed
-	- results and limitations are written up
-	- artifacts are reproducible from commands in this section
-6. **Fix patch application / patch format first**  
+14. **Fix patch application / patch format first**  
     This is still the biggest blocker. Many attempts never reach tests because hunks do not apply.
     Current frequent failing files:
     - sympy/matrices/normalforms.py: 11 failed patch attempts
@@ -855,7 +810,7 @@
     - add a second model pass when patch apply fails: “repair this diff so it applies to this exact file content”
     - include the exact target file excerpt around the failed hunk
     - retry once before counting patch failure
-7. **Fix SymPy test environment compatibility**  
+15. **Fix SymPy test environment compatibility**  
     sympy__sympy-13031 is currently not a meaningful repair failure in some conditions. The failing test crashes on:
     ImportError: cannot import name 'Mapping' from 'collections'
     That is an old-SymPy-vs-Python-3.11 compatibility issue. It should use collections.abc.Mapping, but the benchmark repo predates that.
@@ -866,13 +821,20 @@
         - collections.MutableMapping = collections.abc.MutableMapping
         - collections.Sequence = collections.abc.Sequence
     This improves evaluation validity and may recover a task that is currently environment-blocked.
-8. **Make CEGF use real test failure output, not only solver feedback**  
+16. **Make CEGF use real test failure output, not only solver feedback**  
     Right now CEGF is not improving success. In v2, neural_cegf got 0/7, while neural_only got 2/7.
     Main issue: solver feedback is sparse or misleading:
     - unsat appears even when real tests fail
     - not_applicable appears
     - critique events are 0
     - CEGF often terminates as tests_failed_after_solver
+17. If you have time, increase sample size in this order:
+	1. **Run more SymPy dev tasks first**  
+		- Same repo, fewer environment surprises, best chance of clean real-test results.
+	2. **Then add other logic-heavy repos only if environments are stable**  
+	    - Scikit-learn and Matplotlib can distort results because failures may be build/env related.
+	3. **Keep the model fixed**  
+	    - Use gpt-5.3-codex, max_iterations=3, same four conditions.
 #### **Optimizations**
 ##### Orchestration / Pipeline Management
 ##### **Complexity / Scaling Behavior (Optional but Strong)**
