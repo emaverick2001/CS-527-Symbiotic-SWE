@@ -12,11 +12,12 @@ The implemented repair loop is:
 2. Select repository context from the checked-out task repo.
 3. Generate a git-style patch with a configurable model provider.
 4. Apply the patch to a disposable working copy.
-5. Optionally run impact slicing.
-6. Optionally run symbolic verification.
-7. Optionally convert counterexamples or pytest failures into critique feedback.
-8. Run real task tests.
-9. Write metrics, patch manifests, solver results, test verdicts, and summary artifacts.
+5. If patch application fails, ask the model for one patch-repair rewrite using exact checked-out target file content.
+6. Optionally run impact slicing.
+7. Optionally run symbolic verification.
+8. Optionally convert counterexamples or pytest failures into critique feedback.
+9. Run real task tests.
+10. Write metrics, patch manifests, solver results, test verdicts, and summary artifacts.
 
 Supported experiment conditions:
 
@@ -104,53 +105,91 @@ MAX_ITERATIONS=1 \
 scripts/run_smoke.sh
 ```
 
-Main SymPy dev ablation used for the latest paper tables:
+Main held-out SymPy final evaluation used for the latest paper tables:
 
 ```bash
 uv run --extra swebench symbiotic-swe ablation \
-  --prepared-dir data/prepared/prepared/dev \
-  --output-dir artifacts/runs/dev_ablation_gpt_5_3_codex_sympy_real_tests_v4 \
+  --prepared-dir data/prepared/prepared/final_eval \
+  --output-dir artifacts/runs/final_eval_gpt_5_3_codex_sympy_real_tests \
   --provider openai \
   --model gpt-5.3-codex \
   --max-iterations 3 \
-  --task-id sympy__sympy-13031 \
-  --task-id sympy__sympy-15875 \
-  --task-id sympy__sympy-17318 \
-  --task-id sympy__sympy-19346 \
-  --task-id sympy__sympy-23413 \
-  --task-id sympy__sympy-24213 \
-  --task-id sympy__sympy-24539
+  --task-id sympy__sympy-11618 \
+  --task-id sympy__sympy-12481 \
+  --task-id sympy__sympy-13372 \
+  --task-id sympy__sympy-13480 \
+  --task-id sympy__sympy-13647 \
+  --task-id sympy__sympy-14711 \
+  --task-id sympy__sympy-15809 \
+  --task-id sympy__sympy-17630 \
+  --task-id sympy__sympy-19495 \
+  --task-id sympy__sympy-19954 \
+  --task-id sympy__sympy-20154 \
+  --task-id sympy__sympy-20428 \
+  --task-id sympy__sympy-21847 \
+  --task-id sympy__sympy-22714
 ```
 
 ## Current Result Artifact
 
-The latest clean run is:
+The primary final-evaluation run is:
+
+```text
+artifacts/runs/final_eval_gpt_5_3_codex_sympy_real_tests
+```
+
+High-level held-out SymPy result:
+
+| Condition | Real Test Success | Test Resolution | Logical Correctness | Avg. Iterations | Avg. Runtime | Avg. Tokens | Tokens / Success |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `neural_only` | 14.3% | 18.2% | 0.0% | 1.50 | 8.6s | 16,746.6 | 7,734.0 |
+| `neural_slicing` | 21.4% | 27.3% | 0.0% | 1.71 | 11.2s | 21,835.2 | 15,435.3 |
+| `neural_solver` | 21.4% | 33.3% | 21.4% | 1.79 | 10.1s | 21,002.4 | 12,984.0 |
+| `neural_cegf` | 35.7% | 45.5% | 35.7% | 2.50 | 16.6s | 30,025.9 | 17,420.8 |
+
+Interpretation:
+
+- `neural_cegf` is the strongest condition on the held-out final SymPy subset.
+- `neural_cegf` improves both real-test success and solver-backed logical correctness over `neural_only`.
+- The improvement is not free: `neural_cegf` has the highest average runtime, average token use, and tokens per success.
+- `neural_solver` shows that symbolic checking without feedback is weaker than the full feedback loop.
+
+Definitions:
+
+- Real Test Success: resolved tasks divided by all final-evaluation tasks.
+- Test Resolution: resolved tasks divided by tasks that reached real test evaluation.
+- Logical Correctness: tasks where real tests pass and the final solver status is `unsat`, divided by all final-evaluation tasks.
+- Tokens / Success: LLM tokens spent on successful repairs divided by the number of successful repairs.
+
+The development ablation used during tuning is:
 
 ```text
 artifacts/runs/dev_ablation_gpt_5_3_codex_sympy_real_tests_v4
 ```
 
-High-level result:
-
-| Condition | Real Test Success | Resolved Tasks |
-| --- | ---: | ---: |
-| `neural_only` | 4/7 | 4 |
-| `neural_slicing` | 6/7 | 6 |
-| `neural_solver` | 2/7 | 2 |
-| `neural_cegf` | 3/7 | 3 |
-
-Interpretation:
-
-- `neural_slicing` is the strongest raw real-test performer on this SymPy dev subset.
-- `neural_cegf` provides solver-backed logical correctness and richer diagnostics, but at higher token cost.
-- `neural_solver` shows that symbolic checking without feedback is not enough.
+Use it as supporting development evidence, not as the primary final result.
 
 See:
 
+- `docs/experiment_analysis.md`
 - `docs/experiments.md`
 - `docs/Key_Observations.md`
-- `docs/Figures.md`
 - `docs/high_low_pipeline.MD`
+
+## Paper Figures
+
+Generate the RQ3 cost-vs-success scatterplot from the final-evaluation metrics:
+
+```bash
+uv run python scripts/plot_cost_success_tradeoff.py
+```
+
+Outputs:
+
+- `docs/figures/cost_success_tradeoff.svg`
+- `docs/figures/cost_success_tradeoff_caption.md`
+
+The figure plots average tokens per task against real-test success rate, with bubble size encoding average wall-clock runtime.
 
 ## Artifacts
 

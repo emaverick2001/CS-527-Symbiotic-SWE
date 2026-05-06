@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img">
+<title>Cost vs Success Tradeoff</title>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="600.0" y="42" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#222">Cost vs Success Tradeoff</text>
+<text x="600.0" y="72" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#555">Held-out SymPy final evaluation; bubble size encodes average runtime</text>
+<line x1="118.0" y1="94" x2="118.0" y2="644" stroke="#e6e6e6"/>
+<text x="118.0" y="674" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">15,153</text>
+<line x1="268.4" y1="94" x2="268.4" y2="644" stroke="#e6e6e6"/>
+<text x="268.4" y="674" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">18,446</text>
+<line x1="418.8" y1="94" x2="418.8" y2="644" stroke="#e6e6e6"/>
+<text x="418.8" y="674" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">21,740</text>
+<line x1="569.2" y1="94" x2="569.2" y2="644" stroke="#e6e6e6"/>
+<text x="569.2" y="674" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">25,033</text>
+<line x1="719.6" y1="94" x2="719.6" y2="644" stroke="#e6e6e6"/>
+<text x="719.6" y="674" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">28,326</text>
+<line x1="870.0" y1="94" x2="870.0" y2="644" stroke="#e6e6e6"/>
+<text x="870.0" y="674" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">31,619</text>
+<line x1="118" y1="644.0" x2="870" y2="644.0" stroke="#e6e6e6"/>
+<text x="102" y="648.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">0%</text>
+<line x1="118" y1="534.0" x2="870" y2="534.0" stroke="#e6e6e6"/>
+<text x="102" y="538.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">8%</text>
+<line x1="118" y1="424.0" x2="870" y2="424.0" stroke="#e6e6e6"/>
+<text x="102" y="428.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">17%</text>
+<line x1="118" y1="314.0" x2="870" y2="314.0" stroke="#e6e6e6"/>
+<text x="102" y="318.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">25%</text>
+<line x1="118" y1="204.0" x2="870" y2="204.0" stroke="#e6e6e6"/>
+<text x="102" y="208.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">34%</text>
+<line x1="118" y1="94.0" x2="870" y2="94.0" stroke="#e6e6e6"/>
+<text x="102" y="98.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#555">42%</text>
+<line x1="118" y1="644" x2="870" y2="644" stroke="#333" stroke-width="1.4"/>
+<line x1="118" y1="94" x2="118" y2="644" stroke="#333" stroke-width="1.4"/>
+<text x="494.0" y="724" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#222">Average tokens per task</text>
+<text x="34" y="369.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#222" transform="rotate(-90 34 369.0)">Real-test success rate</text>
+<circle cx="190.8" cy="457.5" r="10.0" fill="#4C78A8" fill-opacity="0.86" stroke="#222" stroke-width="1.2"/>
+<text x="208.8" y="453.5" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#222">neural_only</text>
+<text x="208.8" y="471.5" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#555">TPS 7,734.0, 8.6s</text>
+<circle cx="423.2" cy="364.3" r="15.2" fill="#59A14F" fill-opacity="0.86" stroke="#222" stroke-width="1.2"/>
+<text x="446.4" y="360.3" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#222">neural_slicing</text>
+<text x="446.4" y="378.3" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#555">TPS 15,435.3, 11.2s</text>
+<circle cx="385.1" cy="364.3" r="13.0" fill="#F28E2B" fill-opacity="0.86" stroke="#222" stroke-width="1.2"/>
+<text x="406.2" y="360.3" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#222">neural_solver</text>
+<text x="406.2" y="378.3" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#555">TPS 12,984.0, 10.1s</text>
+<circle cx="797.2" cy="177.9" r="26.0" fill="#B07AA1" fill-opacity="0.86" stroke="#222" stroke-width="1.2"/>
+<text x="831.2" y="173.9" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#222">neural_cegf</text>
+<text x="831.2" y="191.9" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#555">TPS 17,420.8, 16.6s</text>
+<rect x="918" y="104" width="252" height="260" rx="8" fill="#f7f7f7" stroke="#d0d0d0"/>
+<text x="936" y="136" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" fill="#222">How to read this</text>
+<text x="936" y="166" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#444">Up is better: more tasks resolved.</text>
+<text x="936" y="188" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#444">Left is cheaper: fewer tokens per task.</text>
+<text x="936" y="210" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#444">Larger bubbles took longer.</text>
+<text x="936" y="244" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#444">CEGF is most effective, but also</text>
+<text x="936" y="264" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#444">the highest-cost condition.</text>
+<circle cx="936" cy="296" r="6" fill="#4C78A8" stroke="#222" stroke-width="0.8"/>
+<text x="950" y="300" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#333">neural_only: 14.3% success</text>
+<circle cx="936" cy="316" r="6" fill="#59A14F" stroke="#222" stroke-width="0.8"/>
+<text x="950" y="320" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#333">neural_slicing: 21.4% success</text>
+<circle cx="936" cy="336" r="6" fill="#F28E2B" stroke="#222" stroke-width="0.8"/>
+<text x="950" y="340" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#333">neural_solver: 21.4% success</text>
+<circle cx="936" cy="356" r="6" fill="#B07AA1" stroke="#222" stroke-width="0.8"/>
+<text x="950" y="360" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#333">neural_cegf: 35.7% success</text>
+</svg>
