@@ -40,7 +40,7 @@ test = [
 ]
 
 swebench = [
-    "Cython>=0.29.37,<3.0.0",
+    "Cython>=0.29.37,<4.0.0",
     "cycler>=0.12.1",
     "joblib>=1.4.2",
     "kiwisolver>=1.4.5",
